@@ -9,6 +9,7 @@ const cardDark = "#181b1e";
 const fontFamily = `'Inter', Arial, Helvetica, sans-serif`;
 const API_KEY = 'd49129a9-8f4c-4130-968a-cd47501df765';
 
+// List of sets that have 1st Edition AND Unlimited versions
 const SETS_WITH_EDITION = [
   "base1", "base2", "jungle", "fossil", "teamrocket", "gymheroes", "gymchallenge",
   "neoGenesis", "neoDiscovery", "neoRevelation", "neoDestiny", "legendarycollection"
@@ -32,13 +33,14 @@ export default function CardLookup() {
   const [showAddToTrade, setShowAddToTrade] = useState(false);
   const [acquisitionCost, setAcquisitionCost] = useState('');
   const [condition, setCondition] = useState('NM');
-  const [edition, setEdition] = useState('unlimited');
+  const [edition, setEdition] = useState('unlimited'); // NEW
   const [tradeCondition, setTradeCondition] = useState('NM');
   const [tradeNotes, setTradeNotes] = useState('');
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
 
+  // Helper: does this card/set support edition selection?
   function cardHasEditionOptions(card) {
     if (!card || !card.set || !SETS_WITH_EDITION.includes(card.set.id)) return false;
     const prices = card.tcgplayer?.prices;
@@ -47,16 +49,20 @@ export default function CardLookup() {
 
   // Fetch sets
   useEffect(() => {
-    setSetsLoading(true);
-    fetch('https://api.pokemontcg.io/v2/sets', {
-      headers: { 'X-Api-Key': API_KEY }
-    })
-      .then(r => r.json())
-      .then(data => {
+    const fetchSets = async () => {
+      setSetsLoading(true);
+      try {
+        const res = await fetch('https://api.pokemontcg.io/v2/sets', {
+          headers: { 'X-Api-Key': API_KEY }
+        });
+        const data = await res.json();
         setSets(data.data.sort((a, b) => (b.releaseDate > a.releaseDate ? 1 : -1)));
-      })
-      .catch(() => setSets([]))
-      .finally(() => setSetsLoading(false));
+      } catch {
+        setSets([]);
+      }
+      setSetsLoading(false);
+    };
+    fetchSets();
   }, []);
 
   // Card lookup
@@ -66,7 +72,6 @@ export default function CardLookup() {
     setSelectedCard(null);
     setShowModal(false);
     setTotalCount(0);
-
     let url = '';
     if (searchType === 'name') {
       url = `https://api.pokemontcg.io/v2/cards?q=name:"${encodeURIComponent(
@@ -137,6 +142,7 @@ export default function CardLookup() {
       alert("You must be logged in to add to inventory.");
       return;
     }
+    // --- Pick price based on edition ---
     let price = 0;
     if (cardHasEditionOptions(selectedCard) && edition === "firstEdition") {
       price =
@@ -162,7 +168,6 @@ export default function CardLookup() {
         acquisitionCost: parseFloat(acquisitionCost),
         condition,
         dateAdded: new Date().toISOString(),
-        language: selectedCard.language // Save language with card
       });
       setShowAddToInventory(false);
       setShowModal(false);
@@ -200,7 +205,6 @@ export default function CardLookup() {
       condition: tradeCondition,
       notes: tradeNotes,
       dateAdded: new Date().toISOString(),
-      language: selectedCard.language
     });
     localStorage.setItem("currentTrade", JSON.stringify(trade));
     setShowAddToTrade(false);
@@ -356,13 +360,6 @@ export default function CardLookup() {
                 <div style={{ fontWeight: 600, fontSize: 15, textAlign: "center", color: "#fff" }}>{card.name}</div>
                 <div style={{ fontSize: 13, color: accentGreen, margin: "2px 0" }}>{card.set.name}</div>
                 <div style={{ fontSize: 13, color: "#bfffd7" }}>#{card.number}</div>
-                {/* Show language as a badge */}
-                {card.language && card.language !== "en" && (
-                  <div style={{
-                    fontSize: 12, color: "#fce2ff", margin: "3px 0",
-                    background: "#54366b", borderRadius: 4, padding: "2px 7px", fontWeight: 700
-                  }}>{card.language === "ja" ? "Japanese" : card.language}</div>
-                )}
                 <button
                   onClick={() => {
                     setSelectedCard(card);
@@ -482,14 +479,6 @@ export default function CardLookup() {
                 </div>
                 <div style={{ textAlign: "center", color: accentGreen, marginBottom: 8 }}>
                   {selectedCard.set.name} &bull; #{selectedCard.number}
-                  {selectedCard.language && selectedCard.language !== "en" && (
-                    <span style={{
-                      fontSize: 13, marginLeft: 8, color: "#fce2ff",
-                      background: "#54366b", borderRadius: 5, padding: "2px 10px"
-                    }}>
-                      {selectedCard.language === "ja" ? "Japanese" : selectedCard.language}
-                    </span>
-                  )}
                 </div>
                 <div style={{ textAlign: "center", marginBottom: 8 }}>
                   <b style={{ color: "#fff" }}>Rarity:</b> <span>{selectedCard.rarity || "N/A"}</span>

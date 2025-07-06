@@ -8,6 +8,7 @@ import {
   getDoc,
   updateDoc,
   setDoc,
+  addDoc, // <-- make sure this is imported!
 } from "firebase/firestore";
 
 const accentGreen = "#00b84a";
@@ -21,8 +22,8 @@ export default function TradeTab() {
 
   // --- Main trade state
   const [trade, setTrade] = useState({
-    vendor: { cards: [], sealed: [], cash: 0, cashType: "cash" },
-    customer: { cards: [], sealed: [], cash: 0, cashType: "cash" }
+    vendor: { cards: [], cash: 0, cashType: "cash" },
+    customer: { cards: [], cash: 0, cashType: "cash" }
   });
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmError, setConfirmError] = useState("");
@@ -30,18 +31,10 @@ export default function TradeTab() {
   // Vendor add state
   const [showVendorManual, setShowVendorManual] = useState(false);
   const [manualVendor, setManualVendor] = useState({ name: "", value: "", condition: "NM" });
-  const [showVendorSealed, setShowVendorSealed] = useState(false);
-  const [manualVendorSealed, setManualVendorSealed] = useState({
-    productName: "", setName: "", productType: "Booster Box", quantity: 1, value: "", condition: "Sealed"
-  });
 
   // Customer add state
   const [showCustomerManual, setShowCustomerManual] = useState(false);
   const [manualCustomer, setManualCustomer] = useState({ name: "", value: "", condition: "NM" });
-  const [showCustomerSealed, setShowCustomerSealed] = useState(false);
-  const [manualCustomerSealed, setManualCustomerSealed] = useState({
-    productName: "", setName: "", productType: "Booster Box", quantity: 1, value: "", condition: "Sealed"
-  });
 
   // Customer lookup
   const [showCustomerLookup, setShowCustomerLookup] = useState(false);
@@ -81,22 +74,22 @@ export default function TradeTab() {
 
   // -------- Vendor Side Handlers ---------
   function addVendorFromInventory(id) {
-    const item = inventory.find(c => c.id === id);
-    if (!item) return;
-    if (item.type === "sealed") {
-      setTrade(prev => ({
-        ...prev,
-        vendor: { ...prev.vendor, sealed: [...prev.vendor.sealed, { ...item, origin: "inventory" }] }
-      }));
-    } else {
-      setTrade(prev => ({
-        ...prev,
-        vendor: {
-          ...prev.vendor,
-          cards: [...prev.vendor.cards, { ...item, value: item.marketValue, origin: "inventory" }]
-        }
-      }));
-    }
+    const card = inventory.find(c => c.id === id);
+    if (!card) return;
+    setTrade(prev => ({
+      ...prev,
+      vendor: {
+        ...prev.vendor,
+        cards: [
+          ...prev.vendor.cards,
+          {
+            ...card,
+            value: card.marketValue,
+            origin: "inventory"
+          }
+        ]
+      }
+    }));
   }
   function addManualVendorCard() {
     if (!manualVendor.name || !manualVendor.value || isNaN(manualVendor.value)) return;
@@ -119,42 +112,12 @@ export default function TradeTab() {
     setManualVendor({ name: "", value: "", condition: "NM" });
     setShowVendorManual(false);
   }
-  function addManualVendorSealed() {
-    if (!manualVendorSealed.productName || !manualVendorSealed.value || isNaN(manualVendorSealed.value)) return;
-    setTrade(prev => ({
-      ...prev,
-      vendor: {
-        ...prev.vendor,
-        sealed: [
-          ...prev.vendor.sealed,
-          {
-            id: "sealed_manual_" + Date.now(),
-            ...manualVendorSealed,
-            value: Number(manualVendorSealed.value),
-            origin: "manual",
-            type: "sealed"
-          }
-        ]
-      }
-    }));
-    setManualVendorSealed({ productName: "", setName: "", productType: "Booster Box", quantity: 1, value: "", condition: "Sealed" });
-    setShowVendorSealed(false);
-  }
   function removeVendorCard(id) {
     setTrade(prev => ({
       ...prev,
       vendor: {
         ...prev.vendor,
         cards: prev.vendor.cards.filter(c => c.id !== id)
-      }
-    }));
-  }
-  function removeVendorSealed(id) {
-    setTrade(prev => ({
-      ...prev,
-      vendor: {
-        ...prev.vendor,
-        sealed: prev.vendor.sealed.filter(c => c.id !== id)
       }
     }));
   }
@@ -181,42 +144,12 @@ export default function TradeTab() {
     setManualCustomer({ name: "", value: "", condition: "NM" });
     setShowCustomerManual(false);
   }
-  function addManualCustomerSealed() {
-    if (!manualCustomerSealed.productName || !manualCustomerSealed.value || isNaN(manualCustomerSealed.value)) return;
-    setTrade(prev => ({
-      ...prev,
-      customer: {
-        ...prev.customer,
-        sealed: [
-          ...prev.customer.sealed,
-          {
-            id: "sealed_manual_" + Date.now(),
-            ...manualCustomerSealed,
-            value: Number(manualCustomerSealed.value),
-            origin: "manual",
-            type: "sealed"
-          }
-        ]
-      }
-    }));
-    setManualCustomerSealed({ productName: "", setName: "", productType: "Booster Box", quantity: 1, value: "", condition: "Sealed" });
-    setShowCustomerSealed(false);
-  }
   function removeCustomerCard(id) {
     setTrade(prev => ({
       ...prev,
       customer: {
         ...prev.customer,
         cards: prev.customer.cards.filter(c => c.id !== id)
-      }
-    }));
-  }
-  function removeCustomerSealed(id) {
-    setTrade(prev => ({
-      ...prev,
-      customer: {
-        ...prev.customer,
-        sealed: prev.customer.sealed.filter(c => c.id !== id)
       }
     }));
   }
@@ -335,94 +268,73 @@ export default function TradeTab() {
   // --------- Clear Trade ---------
   function clearTrade() {
     setTrade({
-      vendor: { cards: [], sealed: [], cash: 0, cashType: "cash" },
-      customer: { cards: [], sealed: [], cash: 0, cashType: "cash" }
+      vendor: { cards: [], cash: 0, cashType: "cash" },
+      customer: { cards: [], cash: 0, cashType: "cash" }
     });
   }
 
-  // --------- Confirm Trade (Cloud Sync, updated logic) ---------
+  // --------- Confirm Trade (Cloud Sync, updated logic + trade log) ---------
   async function doTrade() {
-    // Trade is allowed if there is at least 1 card or cash or sealed on EITHER side
+    // Trade is allowed if there is at least 1 card or cash on EITHER side
     if (
       trade.vendor.cards.length === 0 &&
-      trade.vendor.sealed.length === 0 &&
       trade.vendor.cash === 0 &&
       trade.customer.cards.length === 0 &&
-      trade.customer.sealed.length === 0 &&
       trade.customer.cash === 0
     ) {
-      setConfirmError("You must add at least one card, sealed product, or cash to complete the trade!");
+      setConfirmError("You must add at least one card or cash to complete the trade!");
       return;
     }
 
-    // --- Get vendor cards and sealed being traded away ---
+    // --- Get vendor cards being traded away ---
     const vendorInventoryCards = trade.vendor.cards.filter(c => c.origin === "inventory");
-    const vendorInventorySealed = trade.vendor.sealed.filter(c => c.origin === "inventory");
-    const vendorInventoryIds = [
-      ...vendorInventoryCards.map(c => c.id),
-      ...vendorInventorySealed.map(s => s.id)
-    ];
+    const vendorInventoryIds = vendorInventoryCards.map(c => c.id);
 
-    // Get the *cost* (acquisitionCost) of vendor inventory cards + sealed
-    let totalVendorCost =
-      vendorInventoryCards.reduce((sum, card) => sum + (Number(card.acquisitionCost) || 0), 0) +
-      vendorInventorySealed.reduce((sum, item) => sum + (Number(item.acquisitionCost) || 0), 0);
+    // Get the *cost* (acquisitionCost) of vendor inventory cards
+    let totalVendorCost = vendorInventoryCards.reduce(
+      (sum, card) => sum + (Number(card.acquisitionCost) || 0),
+      0
+    );
 
     // Subtract any cash from customer to vendor (customer.cash)
     let netCost = totalVendorCost - (Number(trade.customer.cash) || 0);
     if (netCost < 0) netCost = 0;
 
-    // Determine new cards + sealed coming IN to vendor inventory
+    // Determine new cards coming IN to vendor inventory
     const incomingCards = trade.customer.cards;
-    const incomingSealed = trade.customer.sealed;
-    const numIncoming = incomingCards.length + incomingSealed.length;
-    let perItemAcqCost = numIncoming > 0 ? (netCost / numIncoming) : 0;
+    const numIncoming = incomingCards.length;
+    let perCardAcqCost = numIncoming > 0 ? (netCost / numIncoming) : 0;
 
     // --- Cloud Inventory/Cash Logic ---
     // Get latest inventory
     const invSnap = await getDocs(collection(db, "users", uid, "inventory"));
     let inv = invSnap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
 
-    // Remove vendor's traded-away cards & sealed
-    inv = inv.filter(item => !vendorInventoryIds.includes(item.id));
+    // Remove vendor's traded-away cards
+    inv = inv.filter(card => !vendorInventoryIds.includes(card.id));
 
-    // Add customer cards/sealed to inventory (with new calculated acquisition cost)
+    // Add customer cards to inventory (with new calculated acquisition cost)
     let newCards = incomingCards.map(c => ({
-      type: "card",
       setName: c.setName,
       cardName: c.cardName,
       cardNumber: c.number,
       marketValue: c.value,
-      acquisitionCost: perItemAcqCost,
+      acquisitionCost: perCardAcqCost,
       condition: c.condition,
-      dateAdded: new Date().toISOString(),
-    }));
-    let newSealed = incomingSealed.map(s => ({
-      type: "sealed",
-      productName: s.productName,
-      setName: s.setName,
-      productType: s.productType,
-      quantity: s.quantity,
-      marketValue: s.value,
-      acquisitionCost: perItemAcqCost,
-      condition: s.condition,
       dateAdded: new Date().toISOString(),
     }));
 
     // Write new inventory (delete old, add new)
-    // First, delete vendor's traded items
-    for (let itemId of vendorInventoryIds) {
+    // First, delete vendor's traded cards
+    for (let cardId of vendorInventoryIds) {
       try {
-        await setDoc(doc(db, "users", uid, "inventory", itemId), {}, { merge: false });
-        await updateDoc(doc(db, "users", uid, "inventory", itemId), { deleted: true }); // optional marker
+        await setDoc(doc(db, "users", uid, "inventory", cardId), {}, { merge: false });
+        await updateDoc(doc(db, "users", uid, "inventory", cardId), { deleted: true }); // optional marker
       } catch {}
     }
-    // Then, add all new customer cards and sealed
+    // Then, add all new customer cards
     for (let card of newCards) {
       await setDoc(doc(collection(db, "users", uid, "inventory")), card);
-    }
-    for (let sealed of newSealed) {
-      await setDoc(doc(collection(db, "users", uid, "inventory")), sealed);
     }
 
     // Adjust cash: vendor gets customer cash, loses vendor cash
@@ -432,10 +344,26 @@ export default function TradeTab() {
     cash += netCash;
     await setDoc(doc(db, "users", uid), { cashOnHand: cash }, { merge: true });
 
+    // NEW: Write trade to tradeHistory
+    await addDoc(collection(db, "users", uid, "tradeHistory"), {
+      date: new Date().toISOString(),
+      vendor: trade.vendor,
+      customer: trade.customer,
+      summary: {
+        vendorTotal:
+          trade.vendor.cards.reduce((sum, c) => sum + (Number(c.value) || 0), 0) +
+          (Number(trade.vendor.cash) || 0),
+        customerTotal:
+          trade.customer.cards.reduce((sum, c) => sum + (Number(c.value) || 0), 0) +
+          (Number(trade.customer.cash) || 0),
+        cashChange: (Number(trade.customer.cash) || 0) - (Number(trade.vendor.cash) || 0),
+      }
+    });
+
     // Reset trade state/UI
     setTrade({
-      vendor: { cards: [], sealed: [], cash: 0, cashType: "cash" },
-      customer: { cards: [], sealed: [], cash: 0, cashType: "cash" }
+      vendor: { cards: [], cash: 0, cashType: "cash" },
+      customer: { cards: [], cash: 0, cashType: "cash" }
     });
     setConfirmOpen(false);
 
@@ -449,11 +377,9 @@ export default function TradeTab() {
   // --------- Totals ---------
   const vendorTotal =
     trade.vendor.cards.reduce((sum, c) => sum + (Number(c.value) || 0), 0) +
-    trade.vendor.sealed.reduce((sum, c) => sum + (Number(c.value) || 0), 0) +
     (Number(trade.vendor.cash) || 0);
   const customerTotal =
     trade.customer.cards.reduce((sum, c) => sum + (Number(c.value) || 0), 0) +
-    trade.customer.sealed.reduce((sum, c) => sum + (Number(c.value) || 0), 0) +
     (Number(trade.customer.cash) || 0);
 
   // --------- UI ---------
@@ -501,11 +427,9 @@ export default function TradeTab() {
               disabled={inventoryLoading}
             >
               <option value="">Add from Inventory...</option>
-              {inventory.map(item => (
-                <option value={item.id} key={item.id}>
-                  {item.type === "sealed"
-                    ? `[SEALED] ${item.productName} (${item.setName || item.productType}) x${item.quantity || 1}`
-                    : `${item.cardName || item.name} (${item.setName || item.set?.name}) #${item.cardNumber}`}
+              {inventory.map(card => (
+                <option value={card.id} key={card.id}>
+                  {card.cardName || card.name} ({card.setName || card.set?.name}) #{card.cardNumber}
                 </option>
               ))}
             </select>
@@ -523,21 +447,6 @@ export default function TradeTab() {
               }}
             >
               Add Manual Card
-            </button>
-            <button
-              onClick={() => setShowVendorSealed(v => !v)}
-              style={{
-                padding: "9px 16px",
-                background: "#198c47",
-                color: "#fff",
-                border: "none",
-                borderRadius: 7,
-                fontWeight: 700,
-                marginLeft: 8,
-                cursor: "pointer"
-              }}
-            >
-              Add Sealed Product
             </button>
           </div>
           {showVendorManual && (
@@ -622,105 +531,18 @@ export default function TradeTab() {
               </button>
             </div>
           )}
-          {showVendorSealed && (
-            <div style={{ marginBottom: 14, background: "#234", borderRadius: 7, padding: 10 }}>
-              <input
-                placeholder="Product Name"
-                value={manualVendorSealed.productName}
-                onChange={e => setManualVendorSealed(m => ({ ...m, productName: e.target.value }))}
-                style={{ marginRight: 8, ...inputStyle, width: 140 }}
-              />
-              <input
-                placeholder="Set Name (optional)"
-                value={manualVendorSealed.setName}
-                onChange={e => setManualVendorSealed(m => ({ ...m, setName: e.target.value }))}
-                style={{ marginRight: 8, ...inputStyle, width: 120 }}
-              />
-              <select
-                value={manualVendorSealed.productType}
-                onChange={e => setManualVendorSealed(m => ({ ...m, productType: e.target.value }))}
-                style={{ marginRight: 8, ...inputStyle, width: 120 }}
-              >
-                <option>Booster Box</option>
-                <option>Elite Trainer Box</option>
-                <option>Booster Pack</option>
-                <option>Tin</option>
-                <option>Collection Box</option>
-                <option>Promo Pack</option>
-                <option>Other</option>
-              </select>
-              <input
-                placeholder="Qty"
-                type="number"
-                min="1"
-                value={manualVendorSealed.quantity}
-                onChange={e => setManualVendorSealed(m => ({ ...m, quantity: e.target.value }))}
-                style={{ marginRight: 8, ...inputStyle, width: 50 }}
-              />
-              <input
-                placeholder="Value"
-                type="number"
-                min="0"
-                value={manualVendorSealed.value}
-                onChange={e => setManualVendorSealed(m => ({ ...m, value: e.target.value }))}
-                style={{ marginRight: 8, ...inputStyle, width: 90 }}
-              />
-              <select
-                value={manualVendorSealed.condition}
-                onChange={e => setManualVendorSealed(m => ({ ...m, condition: e.target.value }))}
-                style={{ marginRight: 8, ...inputStyle, width: 95 }}
-              >
-                <option>Sealed</option>
-                <option>Damaged Seal</option>
-                <option>Open/New</option>
-                <option>Open/Used</option>
-              </select>
-              <button
-                onClick={addManualVendorSealed}
-                style={{
-                  background: accentGreen,
-                  color: "#181b1e",
-                  padding: "7px 14px",
-                  border: "none",
-                  borderRadius: 6,
-                  fontWeight: 700,
-                  cursor: "pointer"
-                }}
-                disabled={!manualVendorSealed.productName || !manualVendorSealed.value}
-              >
-                Add
-              </button>
-              <button
-                onClick={() => setShowVendorSealed(false)}
-                style={{
-                  marginLeft: 8,
-                  background: "#23262a",
-                  color: "#fff",
-                  padding: "7px 16px",
-                  border: `1px solid #444`,
-                  borderRadius: 6,
-                  fontWeight: 700,
-                  cursor: "pointer"
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          )}
 
-          {/* --- List of vendor cards & sealed --- */}
           <div style={{ fontWeight: 600, color: "#fff", margin: "12px 0 7px" }}>
-            Items ({trade.vendor.cards.length + trade.vendor.sealed.length}):
+            Cards ({trade.vendor.cards.length}):
           </div>
           <div style={{ marginBottom: 18, minHeight: 80 }}>
-            {[...trade.vendor.cards, ...trade.vendor.sealed].length === 0 ? (
-              <div style={{ color: "#ccc" }}>No items yet.</div>
+            {trade.vendor.cards.length === 0 ? (
+              <div style={{ color: "#ccc" }}>No cards yet.</div>
             ) : (
               <table style={{ width: "100%", background: "none" }}>
                 <thead>
                   <tr style={{ background: "#222" }}>
                     <th style={{ color: accentGreen, padding: 7, fontSize: 15 }}>Name</th>
-                    <th style={{ color: accentGreen, padding: 7, fontSize: 15 }}>Details</th>
                     <th style={{ color: accentGreen, padding: 7, fontSize: 15 }}>Cond.</th>
                     <th style={{ color: accentGreen, padding: 7, fontSize: 15 }}>Value</th>
                     <th style={{ color: accentGreen, padding: 7, fontSize: 15 }}></th>
@@ -730,40 +552,11 @@ export default function TradeTab() {
                   {trade.vendor.cards.map(card => (
                     <tr key={card.id}>
                       <td style={{ color: "#fff", padding: 7, fontSize: 16 }}>{card.cardName}</td>
-                      <td style={{ color: "#bfffd7", padding: 7, fontSize: 15 }}>{card.setName || ""}</td>
-                      <td style={{ color: "#fff", padding: 7, fontSize: 15 }}>{card.condition}</td>
-                      <td style={{ color: accentGreen, padding: 7, fontSize: 15 }}>${Number(card.value).toFixed(2)}</td>
+                      <td style={{ color: "#fff", padding: 7, fontSize: 16 }}>{card.condition}</td>
+                      <td style={{ color: accentGreen, padding: 7, fontSize: 16 }}>${Number(card.value).toFixed(2)}</td>
                       <td style={{ padding: 7 }}>
                         <button
                           onClick={() => removeVendorCard(card.id)}
-                          style={{
-                            background: "#a22",
-                            color: "#fff",
-                            border: "none",
-                            borderRadius: 5,
-                            fontWeight: 700,
-                            cursor: "pointer",
-                            padding: "3px 12px"
-                          }}
-                        >
-                          ❌
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                  {trade.vendor.sealed.map(sealed => (
-                    <tr key={sealed.id}>
-                      <td style={{ color: "#bfaaff", padding: 7, fontSize: 16 }}>
-                        [SEALED] {sealed.productName}
-                      </td>
-                      <td style={{ color: "#eaffae", padding: 7, fontSize: 15 }}>
-                        {sealed.setName || sealed.productType} x{sealed.quantity || 1}
-                      </td>
-                      <td style={{ color: "#fff", padding: 7, fontSize: 15 }}>{sealed.condition}</td>
-                      <td style={{ color: accentGreen, padding: 7, fontSize: 15 }}>${Number(sealed.value).toFixed(2)}</td>
-                      <td style={{ padding: 7 }}>
-                        <button
-                          onClick={() => removeVendorSealed(sealed.id)}
                           style={{
                             background: "#a22",
                             color: "#fff",
@@ -869,21 +662,6 @@ export default function TradeTab() {
             >
               Add Manual Card
             </button>
-            <button
-              onClick={() => setShowCustomerSealed(true)}
-              style={{
-                padding: "9px 16px",
-                background: "#198c47",
-                color: "#fff",
-                border: "none",
-                borderRadius: 7,
-                fontWeight: 700,
-                marginLeft: 8,
-                cursor: "pointer"
-              }}
-            >
-              Add Sealed Product
-            </button>
           </div>
           {showCustomerManual && (
             <div style={{ marginBottom: 14, background: "#233", borderRadius: 7, padding: 10 }}>
@@ -967,105 +745,17 @@ export default function TradeTab() {
               </button>
             </div>
           )}
-          {showCustomerSealed && (
-            <div style={{ marginBottom: 14, background: "#234", borderRadius: 7, padding: 10 }}>
-              <input
-                placeholder="Product Name"
-                value={manualCustomerSealed.productName}
-                onChange={e => setManualCustomerSealed(m => ({ ...m, productName: e.target.value }))}
-                style={{ marginRight: 8, ...inputStyle, width: 140 }}
-              />
-              <input
-                placeholder="Set Name (optional)"
-                value={manualCustomerSealed.setName}
-                onChange={e => setManualCustomerSealed(m => ({ ...m, setName: e.target.value }))}
-                style={{ marginRight: 8, ...inputStyle, width: 120 }}
-              />
-              <select
-                value={manualCustomerSealed.productType}
-                onChange={e => setManualCustomerSealed(m => ({ ...m, productType: e.target.value }))}
-                style={{ marginRight: 8, ...inputStyle, width: 120 }}
-              >
-                <option>Booster Box</option>
-                <option>Elite Trainer Box</option>
-                <option>Booster Pack</option>
-                <option>Tin</option>
-                <option>Collection Box</option>
-                <option>Promo Pack</option>
-                <option>Other</option>
-              </select>
-              <input
-                placeholder="Qty"
-                type="number"
-                min="1"
-                value={manualCustomerSealed.quantity}
-                onChange={e => setManualCustomerSealed(m => ({ ...m, quantity: e.target.value }))}
-                style={{ marginRight: 8, ...inputStyle, width: 50 }}
-              />
-              <input
-                placeholder="Value"
-                type="number"
-                min="0"
-                value={manualCustomerSealed.value}
-                onChange={e => setManualCustomerSealed(m => ({ ...m, value: e.target.value }))}
-                style={{ marginRight: 8, ...inputStyle, width: 90 }}
-              />
-              <select
-                value={manualCustomerSealed.condition}
-                onChange={e => setManualCustomerSealed(m => ({ ...m, condition: e.target.value }))}
-                style={{ marginRight: 8, ...inputStyle, width: 95 }}
-              >
-                <option>Sealed</option>
-                <option>Damaged Seal</option>
-                <option>Open/New</option>
-                <option>Open/Used</option>
-              </select>
-              <button
-                onClick={addManualCustomerSealed}
-                style={{
-                  background: accentGreen,
-                  color: "#181b1e",
-                  padding: "7px 14px",
-                  border: "none",
-                  borderRadius: 6,
-                  fontWeight: 700,
-                  cursor: "pointer"
-                }}
-                disabled={!manualCustomerSealed.productName || !manualCustomerSealed.value}
-              >
-                Add
-              </button>
-              <button
-                onClick={() => setShowCustomerSealed(false)}
-                style={{
-                  marginLeft: 8,
-                  background: "#23262a",
-                  color: "#fff",
-                  padding: "7px 16px",
-                  border: `1px solid #444`,
-                  borderRadius: 6,
-                  fontWeight: 700,
-                  cursor: "pointer"
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-
-          {/* --- List of customer cards & sealed --- */}
           <div style={{ fontWeight: 600, color: "#fff", margin: "12px 0 7px" }}>
-            Items ({trade.customer.cards.length + trade.customer.sealed.length}):
+            Cards ({trade.customer.cards.length}):
           </div>
           <div style={{ marginBottom: 18, minHeight: 80 }}>
-            {[...trade.customer.cards, ...trade.customer.sealed].length === 0 ? (
-              <div style={{ color: "#ccc" }}>No items yet.</div>
+            {trade.customer.cards.length === 0 ? (
+              <div style={{ color: "#ccc" }}>No cards yet.</div>
             ) : (
               <table style={{ width: "100%", background: "none" }}>
                 <thead>
                   <tr style={{ background: "#222" }}>
                     <th style={{ color: accentGreen, padding: 7, fontSize: 15 }}>Name</th>
-                    <th style={{ color: accentGreen, padding: 7, fontSize: 15 }}>Details</th>
                     <th style={{ color: accentGreen, padding: 7, fontSize: 15 }}>Cond.</th>
                     <th style={{ color: accentGreen, padding: 7, fontSize: 15 }}>Value</th>
                     <th style={{ color: accentGreen, padding: 7, fontSize: 15 }}></th>
@@ -1075,40 +765,11 @@ export default function TradeTab() {
                   {trade.customer.cards.map(card => (
                     <tr key={card.id}>
                       <td style={{ color: "#fff", padding: 7, fontSize: 16 }}>{card.cardName}</td>
-                      <td style={{ color: "#bfffd7", padding: 7, fontSize: 15 }}>{card.setName || ""}</td>
-                      <td style={{ color: "#fff", padding: 7, fontSize: 15 }}>{card.condition || "NM"}</td>
-                      <td style={{ color: accentGreen, padding: 7, fontSize: 15 }}>${Number(card.value).toFixed(2)}</td>
+                      <td style={{ color: "#fff", padding: 7, fontSize: 16 }}>{card.condition || "NM"}</td>
+                      <td style={{ color: accentGreen, padding: 7, fontSize: 16 }}>${Number(card.value).toFixed(2)}</td>
                       <td style={{ padding: 7 }}>
                         <button
                           onClick={() => removeCustomerCard(card.id)}
-                          style={{
-                            background: "#a22",
-                            color: "#fff",
-                            border: "none",
-                            borderRadius: 5,
-                            fontWeight: 700,
-                            cursor: "pointer",
-                            padding: "3px 12px"
-                          }}
-                        >
-                          ❌
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                  {trade.customer.sealed.map(sealed => (
-                    <tr key={sealed.id}>
-                      <td style={{ color: "#bfaaff", padding: 7, fontSize: 16 }}>
-                        [SEALED] {sealed.productName}
-                      </td>
-                      <td style={{ color: "#eaffae", padding: 7, fontSize: 15 }}>
-                        {sealed.setName || sealed.productType} x{sealed.quantity || 1}
-                      </td>
-                      <td style={{ color: "#fff", padding: 7, fontSize: 15 }}>{sealed.condition}</td>
-                      <td style={{ color: accentGreen, padding: 7, fontSize: 15 }}>${Number(sealed.value).toFixed(2)}</td>
-                      <td style={{ padding: 7 }}>
-                        <button
-                          onClick={() => removeCustomerSealed(sealed.id)}
                           style={{
                             background: "#a22",
                             color: "#fff",
@@ -1176,10 +837,8 @@ export default function TradeTab() {
           onClick={() => setConfirmOpen(true)}
           disabled={
             trade.vendor.cards.length === 0 &&
-            trade.vendor.sealed.length === 0 &&
             trade.vendor.cash === 0 &&
             trade.customer.cards.length === 0 &&
-            trade.customer.sealed.length === 0 &&
             trade.customer.cash === 0
           }
           style={{
@@ -1489,13 +1148,3 @@ export default function TradeTab() {
     </div>
   );
 }
-
-// Small inputStyle helper for sealed product fields
-const inputStyle = {
-  padding: 7,
-  borderRadius: 5,
-  border: "1px solid #444",
-  background: "#181b1e",
-  color: "#fff",
-  fontSize: 15
-};
