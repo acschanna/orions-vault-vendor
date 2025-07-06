@@ -15,13 +15,13 @@ import {
   updateDoc,
   addDoc,
   query,
-  where,
   orderBy,
   serverTimestamp,
 } from "firebase/firestore";
 import TradeTab from "./TradeTab.jsx";
 import Inventory from "./Inventory.jsx";
 import CardLookup from "./CardLookup.jsx";
+import TradeHistory from "./TradeHistory.jsx"; // <--- NEW
 import {
   LineChart,
   Line,
@@ -54,14 +54,11 @@ async function getInventory(uid) {
   return snap.docs.map((d) => ({ ...d.data(), id: d.id }));
 }
 async function saveInventory(uid, inventory) {
-  // Overwrites the inventory collection
   const invRef = collection(db, "users", uid, "inventory");
-  // Remove old
   const oldSnap = await getDocs(invRef);
   for (const docu of oldSnap.docs) await docu.ref.delete();
-  // Add all new
   for (const card of inventory) {
-    const { id, ...rest } = card; // Firestore auto-generates id
+    const { id, ...rest } = card;
     await addDoc(invRef, rest);
   }
 }
@@ -100,7 +97,6 @@ async function addDashboardLogSample(uid, value, cash) {
     value,
     cash,
   });
-  // keep max 48
   const snap = await getDocs(query(logRef, orderBy("ts", "asc")));
   if (snap.docs.length > 48) {
     for (let i = 0; i < snap.docs.length - 48; i++) {
@@ -133,7 +129,6 @@ function LoginScreen() {
     setError("");
     createUserWithEmailAndPassword(auth, email, password)
       .then(async (cred) => {
-        // Initialize user fields
         await setUserFields(cred.user.uid, {
           cashOnHand: 0,
           pendingCardSales: 0,
@@ -225,8 +220,6 @@ function App() {
   const [cashOnHand, setCashOnHand] = useState(0);
   const [pendingCardSales, setPendingCardSales] = useState(0);
   const [dashboardLog, setDashboardLog] = useState([]);
-
-  // Funds widget
   const [fundsAdjust, setFundsAdjust] = useState("");
   const [fundsError, setFundsError] = useState("");
 
@@ -238,7 +231,6 @@ function App() {
     return () => unsub();
   }, []);
 
-  // Fetch user data and inventory from cloud
   useEffect(() => {
     if (!firebaseUser) {
       setInventory([]);
@@ -250,18 +242,15 @@ function App() {
     let cancelled = false;
     async function fetchAll() {
       setLoading(true);
-      // 1. Fetch inventory
       const inv = await getInventory(firebaseUser.uid);
       if (!cancelled) setInventory(inv);
 
-      // 2. Fetch user fields
       const userFields = await getUserFields(firebaseUser.uid);
       if (!cancelled) {
         setCashOnHand(Number(userFields.cashOnHand || 0));
         setPendingCardSales(Number(userFields.pendingCardSales || 0));
       }
 
-      // 3. Fetch dashboard log
       const log = await getDashboardLog(firebaseUser.uid);
       if (!cancelled) setDashboardLog(log);
 
@@ -271,10 +260,8 @@ function App() {
     return () => { cancelled = true; };
   }, [firebaseUser, tab]);
 
-  // Helper: Calculate inventory value
   const inventoryValue = inventory.reduce((sum, c) => sum + (Number(c.marketValue) || 0), 0);
 
-  // Funds Adjustment Handler
   async function adjustFunds(type) {
     let amt = Number(fundsAdjust);
     if (isNaN(amt) || amt <= 0) {
@@ -291,12 +278,10 @@ function App() {
     setCashOnHand(newTotal);
     setFundsAdjust("");
     setFundsError("");
-    // log dashboard
     await addDashboardLogSample(firebaseUser.uid, inventoryValue, newTotal);
     setDashboardLog(await getDashboardLog(firebaseUser.uid));
   }
 
-  // Clear card sales
   async function clearCardSales() {
     await setUserFields(firebaseUser.uid, { pendingCardSales: 0 });
     setPendingCardSales(0);
@@ -304,7 +289,6 @@ function App() {
     setDashboardLog(await getDashboardLog(firebaseUser.uid));
   }
 
-  // Format graph data for Recharts
   const chartData = (dashboardLog.length
     ? dashboardLog
     : [{ ts: Date.now(), value: inventoryValue, cash: cashOnHand }]
@@ -314,13 +298,11 @@ function App() {
     Cash: log.cash
   }));
 
-  // Sign out
   function handleLogout() {
     signOut(auth);
     setTab("dashboard");
   }
 
-  // Show login screen if not logged in:
   if (!firebaseUser) {
     return <LoginScreen />;
   }
@@ -440,6 +422,21 @@ function App() {
           >
             Card Lookup
           </button>
+          <button
+            style={{
+              background: tab === "history" ? accentGreen : cardDark,
+              color: tab === "history" ? "#181b1e" : "#fff",
+              border: "none",
+              borderRadius: 7,
+              padding: "8px 24px",
+              fontWeight: 600,
+              cursor: "pointer",
+              fontSize: 18,
+            }}
+            onClick={() => setTab("history")}
+          >
+            Trade History
+          </button>
         </div>
 
         {/* Dashboard Graph and Widgets */}
@@ -535,8 +532,6 @@ function App() {
                 </button>
               </div>
             </div>
-
-            {/* Funds Adjust Widget */}
             <div style={{
               background: "#202c20",
               borderRadius: 12,
@@ -606,8 +601,6 @@ function App() {
                 Subtract Funds
               </button>
             </div>
-
-            {/* Live Graph */}
             <div
               style={{
                 fontWeight: 600,
@@ -683,6 +676,7 @@ function App() {
           {tab === "trade" && <TradeTab />}
           {tab === "inventory" && <Inventory />}
           {tab === "lookup" && <CardLookup />}
+          {tab === "history" && <TradeHistory />}
         </div>
       </div>
     </UserContext.Provider>

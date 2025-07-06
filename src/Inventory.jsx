@@ -12,14 +12,15 @@ import {
   doc,
   serverTimestamp,
   writeBatch,
+  setDoc,
 } from "firebase/firestore";
 
 const accentGreen = "#00b84a";
 const cardDark = "#181b1e";
 const fontFamily = `'Inter', Arial, Helvetica, sans-serif`;
 const API_KEY = 'd49129a9-8f4c-4130-968a-cd47501df765';
+const CARDS_PER_PAGE = 25;
 
-// Sets with 1st/Unlimited editions
 const SETS_WITH_EDITION = [
   "base1", "base2", "jungle", "fossil", "teamrocket", "gymheroes", "gymchallenge",
   "neoGenesis", "neoDiscovery", "neoRevelation", "neoDestiny", "legendarycollection"
@@ -50,14 +51,6 @@ async function fetchInventory(uid) {
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ ...d.data(), id: d.id }));
 }
-async function addInventory(uid, card) {
-  const invRef = collection(db, "users", uid, "inventory");
-  await addDoc(invRef, {
-    ...card,
-    dateAdded: card.dateAdded || new Date().toISOString(),
-    createdAt: serverTimestamp(),
-  });
-}
 async function updateInventory(uid, cardId, card) {
   const cardRef = doc(db, "users", uid, "inventory", cardId);
   await updateDoc(cardRef, { ...card });
@@ -65,6 +58,14 @@ async function updateInventory(uid, cardId, card) {
 async function deleteInventory(uid, cardId) {
   const cardRef = doc(db, "users", uid, "inventory", cardId);
   await deleteDoc(cardRef);
+}
+async function addInventory(uid, card) {
+  const invRef = collection(db, "users", uid, "inventory");
+  await addDoc(invRef, {
+    ...card,
+    dateAdded: card.dateAdded || new Date().toISOString(),
+    createdAt: serverTimestamp(),
+  });
 }
 async function importCsvToInventory(uid, csvRows, setProgress) {
   const invRef = collection(db, "users", uid, "inventory");
@@ -94,51 +95,47 @@ function supportsEdition(card) {
   );
 }
 
-async function getCurrentMarketValue(card) {
-  if (!card?.tcgPlayerId) return card.marketValue;
-  let url = `https://api.pokemontcg.io/v2/cards/${card.tcgPlayerId}`;
-  try {
-    const res = await fetch(url, { headers: { 'X-Api-Key': API_KEY } });
-    const data = await res.json();
-    if (!data.data) return card.marketValue;
-    const prices = data.data.tcgplayer?.prices;
-    if (!prices) return card.marketValue;
-    if (supportsEdition(card) && card.edition === "firstEdition") {
-      return (
-        prices["1stEdition"]?.market ??
-        prices["1stEditionHolofoil"]?.market ??
-        prices["1stEditionNormal"]?.market ??
-        card.marketValue
-      );
-    } else {
-      return (
-        prices.normal?.market ??
-        prices.holofoil?.market ??
-        prices.reverseHolofoil?.market ??
-        card.marketValue
-      );
-    }
-  } catch {
-    return card.marketValue;
-  }
+function EditionIcon({ edition }) {
+  if (!edition) return <span style={{ color: "#bbb" }}>-</span>;
+  if (edition === "firstEdition") return <span title="1st Edition" style={{
+    display: "inline-block", background: "#a7a2f7", color: "#23143d", borderRadius: "6px",
+    fontWeight: 700, fontSize: 13, padding: "2px 7px", marginLeft: 5
+  }}>1st</span>;
+  if (edition === "unlimited") return <span title="Unlimited" style={{
+    display: "inline-block", background: "#d4fba7", color: "#1a3112", borderRadius: "6px",
+    fontWeight: 700, fontSize: 13, padding: "2px 7px", marginLeft: 5
+  }}>U</span>;
+  return <span style={{ color: "#bbb" }}>-</span>;
 }
 
 function Inventory() {
   const user = useUser();
   const uid = user?.uid;
+  const fileRef = useRef();
 
   const [inventory, setInventory] = useState([]);
+  const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
   const [editData, setEditData] = useState({});
   const [inlineEditIdx, setInlineEditIdx] = useState(null);
   const [inlineEditValue, setInlineEditValue] = useState("");
   const [deleteId, setDeleteId] = useState(null);
+  const [undoCard, setUndoCard] = useState(null);
+  const [undoTimeout, setUndoTimeout] = useState(null);
+  const [bulkSelected, setBulkSelected] = useState([]);
   const [importResult, setImportResult] = useState("");
   const [importProgress, setImportProgress] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [refreshProgress, setRefreshProgress] = useState("");
-  const fileRef = useRef();
+  const [sortField, setSortField] = useState("dateAdded");
+  const [sortAsc, setSortAsc] = useState(false);
+  const [search, setSearch] = useState("");
+  const [filterEdition, setFilterEdition] = useState("");
+  const [filterSet, setFilterSet] = useState("");
+  const [filterValueMin, setFilterValueMin] = useState("");
+  const [filterValueMax, setFilterValueMax] = useState("");
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     if (!uid) return;
@@ -149,38 +146,43 @@ function Inventory() {
     });
   }, [uid]);
 
-  const refresh = () => {
-    if (!uid) return;
-    setLoading(true);
-    fetchInventory(uid).then(inv => {
-      setInventory(inv);
-      setLoading(false);
-    });
-  };
-
-  async function refreshInventoryPrices() {
-    if (!uid) return;
-    setRefreshing(true);
-    setRefreshProgress("Checking latest prices...");
-    const snap = await getDocs(collection(db, "users", uid, "inventory"));
-    let i = 0;
-    for (let docSnap of snap.docs) {
-      i++;
-      setRefreshProgress(`Updating ${i} of ${snap.size}...`);
-      const card = docSnap.data();
-      const newPrice = await getCurrentMarketValue(card);
-      if (Math.abs(Number(newPrice) - Number(card.marketValue)) > 0.01) {
-        await updateDoc(doc(db, "users", uid, "inventory", docSnap.id), {
-          marketValue: newPrice,
-          lastMarketValue: card.marketValue,
-          lastMarketValueUpdate: new Date().toISOString()
-        });
-      }
+  useEffect(() => {
+    let arr = [...inventory];
+    if (search.trim()) {
+      arr = arr.filter(c =>
+        (c.cardName || "").toLowerCase().includes(search.toLowerCase()) ||
+        (c.setName || "").toLowerCase().includes(search.toLowerCase())
+      );
     }
-    setRefreshProgress("");
-    setRefreshing(false);
-    refresh();
-    alert("Inventory prices refreshed!");
+    if (filterEdition) arr = arr.filter(c => (c.edition || "") === filterEdition);
+    if (filterSet) arr = arr.filter(c => (c.setName || "") === filterSet);
+    if (filterValueMin) arr = arr.filter(c => Number(c.marketValue) >= Number(filterValueMin));
+    if (filterValueMax) arr = arr.filter(c => Number(c.marketValue) <= Number(filterValueMax));
+    arr.sort((a, b) => {
+      let valA = a[sortField] ?? "", valB = b[sortField] ?? "";
+      if (sortField === "marketValue" || sortField === "acquisitionCost") {
+        valA = Number(valA); valB = Number(valB);
+      } else if (typeof valA === "string") {
+        valA = valA.toLowerCase(); valB = valB.toLowerCase();
+      }
+      if (valA < valB) return sortAsc ? -1 : 1;
+      if (valA > valB) return sortAsc ? 1 : -1;
+      return 0;
+    });
+    setFiltered(arr);
+    setPage(1);
+  }, [inventory, search, filterEdition, filterSet, filterValueMin, filterValueMax, sortField, sortAsc]);
+
+  const uniqueSets = Array.from(new Set(inventory.map(card => card.setName).filter(Boolean))).sort();
+  const paginated = filtered.slice((page - 1) * CARDS_PER_PAGE, page * CARDS_PER_PAGE);
+  const numPages = Math.ceil(filtered.length / CARDS_PER_PAGE);
+
+  function handleSort(field) {
+    if (sortField === field) setSortAsc(a => !a);
+    else {
+      setSortField(field);
+      setSortAsc(field === "marketValue" || field === "acquisitionCost" ? false : true);
+    }
   }
 
   function startEdit(card) {
@@ -193,8 +195,7 @@ function Inventory() {
   async function saveEdit() {
     if (!uid || !editing) return;
     await updateInventory(uid, editing.id, editData);
-    setEditing(null);
-    setEditData({});
+    setEditing(null); setEditData({});
     setTimeout(refresh, 100);
   }
   function cancelEdit() {
@@ -207,11 +208,11 @@ function Inventory() {
     setInlineEditValue(value !== undefined && value !== null ? value : "");
   }
   async function saveInlineEdit(idx) {
-    if (!uid || !inventory[idx]) return;
+    if (!uid || !paginated[idx]) return;
     let val = Number(inlineEditValue);
     if (isNaN(val) || val < 0) val = 0;
-    await updateInventory(uid, inventory[idx].id, {
-      ...inventory[idx],
+    await updateInventory(uid, paginated[idx].id, {
+      ...paginated[idx],
       marketValue: val,
     });
     setInlineEditIdx(null);
@@ -228,22 +229,71 @@ function Inventory() {
   }
   async function doDelete() {
     if (!uid || !deleteId) return;
+    const card = inventory.find(c => c.id === deleteId);
+    setUndoCard({ ...card });
+    setUndoTimeout(setTimeout(() => setUndoCard(null), 8000));
     await deleteInventory(uid, deleteId);
     setDeleteId(null);
+    setTimeout(refresh, 150);
+  }
+  async function undoDelete() {
+    if (!uid || !undoCard) return;
+    await setDoc(doc(db, "users", uid, "inventory", undoCard.id), undoCard);
+    setUndoCard(null);
+    clearTimeout(undoTimeout);
     setTimeout(refresh, 100);
+  }
+
+  function toggleBulk(cardId) {
+    setBulkSelected(selected =>
+      selected.includes(cardId)
+        ? selected.filter(id => id !== cardId)
+        : [...selected, cardId]
+    );
+  }
+  function selectAllVisible() {
+    setBulkSelected(paginated.map(c => c.id));
+  }
+  function clearBulk() {
+    setBulkSelected([]);
+  }
+  async function bulkDelete() {
+    if (!uid || !bulkSelected.length) return;
+    for (const id of bulkSelected) await deleteInventory(uid, id);
+    setBulkSelected([]); setTimeout(refresh, 400);
+  }
+  async function bulkSetEdition(edition) {
+    if (!uid || !bulkSelected.length) return;
+    for (const id of bulkSelected) {
+      const card = inventory.find(c => c.id === id);
+      if (supportsEdition(card)) await updateInventory(uid, id, { ...card, edition });
+    }
+    setBulkSelected([]); setTimeout(refresh, 400);
+  }
+  function bulkExport() {
+    const fields = [
+      "id", "setName", "cardName", "cardNumber", "condition", "edition",
+      "marketValue", "acquisitionCost", "dateAdded"
+    ];
+    const rows = [fields.join(",")];
+    inventory.filter(c => bulkSelected.includes(c.id)).forEach(card => {
+      rows.push(fields.map(f => toCsvValue(card[f] || "")).join(","));
+    });
+    const csv = rows.join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `inventory_bulk_export_${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+    setBulkSelected([]);
   }
 
   function exportCsv() {
     const fields = [
-      "id",
-      "setName",
-      "cardName",
-      "cardNumber",
-      "condition",
-      "edition",
-      "marketValue",
-      "acquisitionCost",
-      "dateAdded"
+      "id", "setName", "cardName", "cardNumber", "condition", "edition",
+      "marketValue", "acquisitionCost", "dateAdded"
     ];
     const rows = [fields.join(",")];
     inventory.forEach(card => {
@@ -255,12 +305,11 @@ function Inventory() {
     const a = document.createElement("a");
     a.href = url;
     a.download = `inventory_export_${new Date().toISOString().slice(0,10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
+    document.body.appendChild(a); a.click();
     setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
   }
 
-  function importCsv(e) {
+  async function importCsv(e) {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
@@ -268,15 +317,8 @@ function Inventory() {
       const lines = evt.target.result.split(/\r?\n/).filter(Boolean);
       if (lines.length < 2) { setImportResult("File has no rows!"); return; }
       const fields = [
-        "id",
-        "setName",
-        "cardName",
-        "cardNumber",
-        "condition",
-        "edition",
-        "marketValue",
-        "acquisitionCost",
-        "dateAdded"
+        "id", "setName", "cardName", "cardNumber", "condition", "edition",
+        "marketValue", "acquisitionCost", "dateAdded"
       ];
       let cards = [];
       for (let i=1; i<lines.length; ++i) {
@@ -306,7 +348,64 @@ function Inventory() {
     }
   }
 
-  // --- UI ---
+  // -- Price Refresh --
+  async function refreshInventoryPrices() {
+    if (!uid) return;
+    setRefreshing(true);
+    setRefreshProgress("Checking latest prices...");
+    const snap = await getDocs(collection(db, "users", uid, "inventory"));
+    let i = 0;
+    for (let docSnap of snap.docs) {
+      i++;
+      setRefreshProgress(`Updating ${i} of ${snap.size}...`);
+      const card = docSnap.data();
+      const newPrice = await getCurrentMarketValue(card);
+      if (Math.abs(Number(newPrice) - Number(card.marketValue)) > 0.01) {
+        await updateDoc(doc(db, "users", uid, "inventory", docSnap.id), {
+          marketValue: newPrice,
+          lastMarketValue: card.marketValue,
+          lastMarketValueUpdate: new Date().toISOString()
+        });
+      }
+    }
+    setRefreshProgress("");
+    setRefreshing(false);
+    setTimeout(() => setRefreshProgress(""), 1200);
+    setTimeout(refresh, 600);
+    alert("Inventory prices refreshed!");
+  }
+
+  // Fetch current market value from PokémonTCG.io
+  async function getCurrentMarketValue(card) {
+    if (!card?.tcgPlayerId) return card.marketValue;
+    let url = `https://api.pokemontcg.io/v2/cards/${card.tcgPlayerId}`;
+    try {
+      const res = await fetch(url, { headers: { 'X-Api-Key': API_KEY } });
+      const data = await res.json();
+      if (!data.data) return card.marketValue;
+      const prices = data.data.tcgplayer?.prices;
+      if (!prices) return card.marketValue;
+      if (supportsEdition(card) && card.edition === "firstEdition") {
+        return (
+          prices["1stEdition"]?.market ??
+          prices["1stEditionHolofoil"]?.market ??
+          prices["1stEditionNormal"]?.market ??
+          card.marketValue
+        );
+      } else {
+        return (
+          prices.normal?.market ??
+          prices.holofoil?.market ??
+          prices.reverseHolofoil?.market ??
+          card.marketValue
+        );
+      }
+    } catch {
+      return card.marketValue;
+    }
+  }
+
+  // ---- UI ----
   return (
     <div
       style={{
@@ -320,6 +419,7 @@ function Inventory() {
         fontFamily,
       }}
     >
+      {/* Top bar */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}>
         <h2 style={{ color: accentGreen, marginTop: 0, fontWeight: 800, fontSize: 28 }}>
           Inventory
@@ -336,6 +436,65 @@ function Inventory() {
           <button style={btnImport} onClick={() => fileRef.current.click()} disabled={loading}>Import CSV</button>
         </div>
       </div>
+      {/* Search and Filter Bar */}
+      <div style={{
+        margin: "16px 0 6px", display: "flex", alignItems: "center", flexWrap: "wrap",
+        gap: 10, background: "#19231c", padding: "14px 14px 10px 14px", borderRadius: 9
+      }}>
+        <input
+          style={{ ...inputStyle, width: 190, minWidth: 0, fontSize: 16, background: "#121413" }}
+          placeholder="Search name or set"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+        <select style={{ ...inputStyle, minWidth: 110 }}
+          value={filterSet}
+          onChange={e => setFilterSet(e.target.value)}
+        >
+          <option value="">All Sets</option>
+          {uniqueSets.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select style={{ ...inputStyle, minWidth: 110 }}
+          value={filterEdition}
+          onChange={e => setFilterEdition(e.target.value)}
+        >
+          <option value="">All Editions</option>
+          <option value="firstEdition">1st Edition</option>
+          <option value="unlimited">Unlimited</option>
+        </select>
+        <input
+          type="number"
+          style={{ ...inputStyle, width: 86, minWidth: 0 }}
+          placeholder="Min $"
+          value={filterValueMin}
+          onChange={e => setFilterValueMin(e.target.value)}
+        />
+        <input
+          type="number"
+          style={{ ...inputStyle, width: 86, minWidth: 0 }}
+          placeholder="Max $"
+          value={filterValueMax}
+          onChange={e => setFilterValueMax(e.target.value)}
+        />
+        <button style={btnClear} onClick={() => {
+          setSearch(""); setFilterEdition(""); setFilterSet(""); setFilterValueMin(""); setFilterValueMax("");
+        }}>Clear</button>
+      </div>
+      {/* Bulk Actions Bar */}
+      {bulkSelected.length > 0 && (
+        <div style={{
+          margin: "0 0 9px", background: "#172a1e", padding: 9, borderRadius: 7,
+          color: "#ddffd7", fontWeight: 600, display: "flex", alignItems: "center", gap: 14
+        }}>
+          <span>{bulkSelected.length} selected</span>
+          <button style={btnDelete} onClick={bulkDelete}>Delete</button>
+          <button style={btnExport} onClick={bulkExport}>Export</button>
+          <button style={btnClear} onClick={() => bulkSetEdition("firstEdition")}>Set 1st Ed</button>
+          <button style={btnClear} onClick={() => bulkSetEdition("unlimited")}>Set Unlimited</button>
+          <button style={btnClear} onClick={clearBulk}>Clear</button>
+        </div>
+      )}
+      {/* Refresh Prices */}
       <button
         style={{
           background: accentGreen,
@@ -343,7 +502,7 @@ function Inventory() {
           fontWeight: 700,
           borderRadius: 7,
           padding: "8px 20px",
-          marginBottom: 20,
+          marginBottom: 14,
           fontSize: 15,
           cursor: refreshing ? "not-allowed" : "pointer"
         }}
@@ -354,163 +513,188 @@ function Inventory() {
       </button>
       {importProgress && (
         <div style={{
-          color: "#fff",
-          background: "#00aaff",
-          padding: "7px 22px",
-          marginBottom: 12,
-          borderRadius: 8,
-          fontWeight: 600,
-          width: "fit-content"
+          color: "#fff", background: "#00aaff", padding: "7px 22px", marginBottom: 12,
+          borderRadius: 8, fontWeight: 600, width: "fit-content"
         }}>{importProgress}</div>
       )}
       {importResult && (
         <div style={{
-          color: "#fff",
-          background: accentGreen,
-          padding: "7px 22px",
-          marginBottom: 12,
-          borderRadius: 8,
-          fontWeight: 600,
-          width: "fit-content"
+          color: "#fff", background: accentGreen, padding: "7px 22px", marginBottom: 12,
+          borderRadius: 8, fontWeight: 600, width: "fit-content"
         }}>{importResult}</div>
+      )}
+      {undoCard && (
+        <div style={{
+          margin: "0 0 14px", background: "#293c1e", padding: 12, borderRadius: 8, fontWeight: 600,
+          color: "#f3ffc4", display: "flex", alignItems: "center", gap: 13
+        }}>
+          Deleted "{undoCard.cardName}" from {undoCard.setName}.
+          <button style={btnSave} onClick={undoDelete}>Undo</button>
+        </div>
       )}
       {loading ? (
         <div style={{ color: accentGreen, padding: 40, textAlign: "center" }}>Loading inventory...</div>
       ) : (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 18 }}>
-            <thead>
-              <tr style={{ background: "#18241d" }}>
-                <th style={thStyle}>Set</th>
-                <th style={thStyle}>Card Name</th>
-                <th style={thStyle}>Number</th>
-                <th style={thStyle}>Condition</th>
-                <th style={thStyle}>Edition</th>
-                <th style={thStyle}>Market Value</th>
-                <th style={thStyle}>Acquisition Cost</th>
-                <th style={thStyle}>Date Added</th>
-                <th style={thStyle}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {inventory.length === 0 ? (
-                <tr>
-                  <td colSpan={9} style={{ color: "#ddd", textAlign: "center", padding: 36 }}>
-                    No cards in inventory yet.
-                  </td>
+        <>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 8 }}>
+              <thead>
+                <tr style={{ background: "#18241d" }}>
+                  <th style={thStyle}>
+                    <input type="checkbox"
+                      checked={paginated.length && bulkSelected.length === paginated.length}
+                      onChange={e => e.target.checked ? selectAllVisible() : clearBulk()}
+                    />
+                  </th>
+                  <th style={thStyle} onClick={() => handleSort("setName")}>Set</th>
+                  <th style={thStyle} onClick={() => handleSort("cardName")}>Card Name</th>
+                  <th style={thStyle} onClick={() => handleSort("cardNumber")}>Number</th>
+                  <th style={thStyle} onClick={() => handleSort("condition")}>Condition</th>
+                  <th style={thStyle} onClick={() => handleSort("edition")}>Edition</th>
+                  <th style={thStyle} onClick={() => handleSort("marketValue")}>Market Value</th>
+                  <th style={thStyle} onClick={() => handleSort("acquisitionCost")}>Acquisition Cost</th>
+                  <th style={thStyle} onClick={() => handleSort("dateAdded")}>Date Added</th>
+                  <th style={thStyle}></th>
                 </tr>
-              ) : (
-                inventory.map((card, idx) => (
-                  <tr key={card.id}>
-                    <td style={tdStyle}>{card.setName || ""}</td>
-                    <td style={tdStyle}>{card.cardName}</td>
-                    <td style={tdStyle}>{card.cardNumber}</td>
-                    <td style={tdStyle}>{card.condition}</td>
-                    <td style={tdStyle}>
-                      {supportsEdition(card) ? (
-                        card.edition === "" || !card.edition ? (
-                          <span style={{ color: "#ccc" }}>-</span>
-                        ) : card.edition === "firstEdition" ? (
-                          <span style={{ color: "#b6b4fd" }}>1st Edition</span>
-                        ) : (
-                          <span style={{ color: "#eaffae" }}>Unlimited</span>
-                        )
-                      ) : (
-                        <span style={{ color: "#a3ffb4" }}>-</span>
-                      )}
-                    </td>
-                    <td style={{ ...tdStyle, color: accentGreen }}>
-                      {inlineEditIdx === idx ? (
-                        <form
-                          onSubmit={e => { e.preventDefault(); saveInlineEdit(idx); }}
-                          style={{ display: "flex", alignItems: "center", gap: 7 }}
-                        >
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={inlineEditValue}
-                            onChange={e => setInlineEditValue(e.target.value)}
-                            style={{
-                              width: 70,
-                              padding: 5,
-                              background: "#202526",
-                              color: "#fff",
-                              border: `1.5px solid ${accentGreen}`,
-                              borderRadius: 6,
-                              fontSize: 15
-                            }}
-                            autoFocus
-                          />
-                          <button
-                            type="submit"
-                            style={{
-                              background: accentGreen,
-                              color: "#181b1e",
-                              border: "none",
-                              borderRadius: 6,
-                              padding: "2px 10px",
-                              fontWeight: 700,
-                              cursor: "pointer"
-                            }}
-                          >
-                            Save
-                          </button>
-                          <button
-                            type="button"
-                            onClick={cancelInlineEdit}
-                            style={{
-                              background: "#333",
-                              color: "#fff",
-                              border: "none",
-                              borderRadius: 6,
-                              padding: "2px 9px",
-                              fontWeight: 700,
-                              cursor: "pointer"
-                            }}
-                          >
-                            Cancel
-                          </button>
-                        </form>
-                      ) : (
-                        <span>
-                          ${Number(card.marketValue || 0).toFixed(2)}{" "}
-                          <button
-                            onClick={() => startInlineEdit(idx, card.marketValue)}
-                            style={{
-                              marginLeft: 7,
-                              background: "none",
-                              border: "none",
-                              color: "#d5ffa9",
-                              fontSize: 16,
-                              cursor: "pointer"
-                            }}
-                            title="Edit value"
-                          >✎</button>
-                        </span>
-                      )}
-                    </td>
-                    <td style={{ ...tdStyle, color: "#8cd4aa" }}>${Number(card.acquisitionCost || 0).toFixed(2)}</td>
-                    <td style={tdStyle}>{niceDate(card.dateAdded)}</td>
-                    <td style={tdStyle}>
-                      <button
-                        style={btnEdit}
-                        onClick={() => startEdit(card)}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        style={btnDelete}
-                        onClick={() => confirmDelete(card.id)}
-                      >
-                        Delete
-                      </button>
+              </thead>
+              <tbody>
+                {paginated.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} style={{ color: "#ddd", textAlign: "center", padding: 36 }}>
+                      No cards in inventory yet.
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : (
+                  paginated.map((card, idx) => (
+                    <tr key={card.id}>
+                      <td style={tdStyle}>
+                        <input
+                          type="checkbox"
+                          checked={bulkSelected.includes(card.id)}
+                          onChange={() => toggleBulk(card.id)}
+                        />
+                      </td>
+                      <td style={tdStyle}>{card.setName || ""}</td>
+                      <td style={tdStyle}>{card.cardName}</td>
+                      <td style={tdStyle}>{card.cardNumber}</td>
+                      <td style={tdStyle}>{card.condition}</td>
+                      <td style={tdStyle}>
+                        {supportsEdition(card)
+                          ? <EditionIcon edition={card.edition || ""} />
+                          : <span style={{ color: "#a3ffb4" }}>-</span>
+                        }
+                      </td>
+                      <td style={{ ...tdStyle, color: accentGreen }}>
+                        {inlineEditIdx === idx ? (
+                          <form
+                            onSubmit={e => { e.preventDefault(); saveInlineEdit(idx); }}
+                            style={{ display: "flex", alignItems: "center", gap: 7 }}
+                          >
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={inlineEditValue}
+                              onChange={e => setInlineEditValue(e.target.value)}
+                              style={{
+                                width: 70,
+                                padding: 5,
+                                background: "#202526",
+                                color: "#fff",
+                                border: `1.5px solid ${accentGreen}`,
+                                borderRadius: 6,
+                                fontSize: 15
+                              }}
+                              autoFocus
+                            />
+                            <button
+                              type="submit"
+                              style={{
+                                background: accentGreen,
+                                color: "#181b1e",
+                                border: "none",
+                                borderRadius: 6,
+                                padding: "2px 10px",
+                                fontWeight: 700,
+                                cursor: "pointer"
+                              }}
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={cancelInlineEdit}
+                              style={{
+                                background: "#333",
+                                color: "#fff",
+                                border: "none",
+                                borderRadius: 6,
+                                padding: "2px 9px",
+                                fontWeight: 700,
+                                cursor: "pointer"
+                              }}
+                            >
+                              Cancel
+                            </button>
+                          </form>
+                        ) : (
+                          <span>
+                            ${Number(card.marketValue || 0).toFixed(2)}{" "}
+                            <button
+                              onClick={() => startInlineEdit(idx, card.marketValue)}
+                              style={{
+                                marginLeft: 7,
+                                background: "none",
+                                border: "none",
+                                color: "#d5ffa9",
+                                fontSize: 16,
+                                cursor: "pointer"
+                              }}
+                              title="Edit value"
+                            >✎</button>
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ ...tdStyle, color: "#8cd4aa" }}>${Number(card.acquisitionCost || 0).toFixed(2)}</td>
+                      <td style={tdStyle}>{niceDate(card.dateAdded)}</td>
+                      <td style={tdStyle}>
+                        <button
+                          style={btnEdit}
+                          onClick={() => startEdit(card)}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          style={btnDelete}
+                          onClick={() => confirmDelete(card.id)}
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+          {/* Pagination */}
+          {numPages > 1 && (
+            <div style={{ textAlign: "center", marginTop: 15 }}>
+              <button
+                style={btnPageNav}
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+              >Prev</button>
+              <span style={{ margin: "0 14px", color: "#fff", fontWeight: 700 }}>
+                Page {page} of {numPages}
+              </span>
+              <button
+                style={btnPageNav}
+                onClick={() => setPage(p => Math.min(numPages, p + 1))}
+                disabled={page === numPages}
+              >Next</button>
+            </div>
+          )}
+        </>
       )}
 
       {/* Edit Modal */}
@@ -624,114 +808,58 @@ function Input({ label, value, onChange, type = "text", prefix = "" }) {
 }
 
 const thStyle = {
-  color: "#caffea",
-  fontWeight: 700,
-  padding: "13px 7px",
-  fontSize: 16,
-  borderBottom: "1.5px solid #184828",
-  letterSpacing: ".5px",
-  background: "#1c2d20",
+  color: "#caffea", fontWeight: 700, padding: "13px 7px", fontSize: 16,
+  borderBottom: "1.5px solid #184828", letterSpacing: ".5px", background: "#1c2d20",
 };
 const tdStyle = {
-  color: "#fff",
-  padding: "10px 7px",
-  fontSize: 15,
-  textAlign: "left",
-  borderBottom: "1px solid #192822",
-  maxWidth: 220,
-  wordBreak: "break-all"
+  color: "#fff", padding: "10px 7px", fontSize: 15, textAlign: "left",
+  borderBottom: "1px solid #192822", maxWidth: 220, wordBreak: "break-all"
 };
 const btnEdit = {
-  background: "#223",
-  color: "#fff",
-  border: "1px solid #33c669",
-  borderRadius: 5,
-  fontWeight: 700,
-  padding: "4px 14px",
-  marginRight: 4,
-  cursor: "pointer",
-  fontSize: 14
+  background: "#223", color: "#fff", border: "1px solid #33c669", borderRadius: 5,
+  fontWeight: 700, padding: "4px 14px", marginRight: 4, cursor: "pointer", fontSize: 14
 };
 const btnDelete = {
-  background: "#a22",
-  color: "#fff",
-  border: "none",
-  borderRadius: 5,
-  fontWeight: 700,
-  padding: "4px 14px",
-  marginRight: 4,
-  cursor: "pointer",
-  fontSize: 14
+  background: "#a22", color: "#fff", border: "none", borderRadius: 5, fontWeight: 700,
+  padding: "4px 14px", marginRight: 4, cursor: "pointer", fontSize: 14
 };
 const btnSave = {
-  background: accentGreen,
-  color: "#181b1e",
-  border: "none",
-  borderRadius: 6,
-  fontWeight: 800,
-  padding: "7px 20px",
-  fontSize: 16,
-  cursor: "pointer",
-  marginRight: 8,
+  background: accentGreen, color: "#181b1e", border: "none", borderRadius: 6,
+  fontWeight: 800, padding: "7px 20px", fontSize: 16, cursor: "pointer", marginRight: 8,
 };
 const btnCancel = {
-  background: "#23262a",
-  color: "#fff",
-  padding: "7px 20px",
-  border: `1.5px solid #444`,
-  borderRadius: 6,
-  fontWeight: 700,
-  fontSize: 16,
-  cursor: "pointer"
+  background: "#23262a", color: "#fff", padding: "7px 20px", border: `1.5px solid #444`,
+  borderRadius: 6, fontWeight: 700, fontSize: 16, cursor: "pointer"
 };
 const btnExport = {
-  background: accentGreen,
-  color: "#181b1e",
-  border: "none",
-  borderRadius: 7,
-  fontWeight: 700,
-  padding: "8px 20px",
-  fontSize: 15,
-  cursor: "pointer",
-  marginRight: 12,
+  background: accentGreen, color: "#181b1e", border: "none", borderRadius: 7,
+  fontWeight: 700, padding: "8px 20px", fontSize: 15, cursor: "pointer", marginRight: 12,
 };
 const btnImport = {
-  background: "#223",
-  color: "#fff",
-  border: `1px solid ${accentGreen}`,
-  borderRadius: 7,
-  fontWeight: 700,
-  padding: "8px 20px",
-  fontSize: 15,
-  cursor: "pointer",
+  background: "#223", color: "#fff", border: `1px solid ${accentGreen}`,
+  borderRadius: 7, fontWeight: 700, padding: "8px 20px", fontSize: 15, cursor: "pointer",
+};
+const btnClear = {
+  background: "#233", color: "#fff", border: `1px solid #888`, borderRadius: 7,
+  fontWeight: 700, padding: "8px 16px", fontSize: 14, cursor: "pointer",
+};
+const btnPageNav = {
+  background: "#333", color: "#caffea", border: `1px solid #222`, borderRadius: 7,
+  fontWeight: 700, padding: "7px 18px", fontSize: 15, cursor: "pointer",
 };
 const inputLabel = { color: "#baffda", marginRight: 8, fontWeight: 600, minWidth: 90, display: "inline-block" };
 const inputStyle = {
-  padding: 7,
-  borderRadius: 5,
-  border: "1px solid #444",
-  background: "#181b1e",
-  color: "#fff",
-  minWidth: 170,
-  fontSize: 15,
-  marginRight: 2
+  padding: 7, borderRadius: 5, border: "1px solid #444",
+  background: "#181b1e", color: "#fff", minWidth: 140, fontSize: 15, marginRight: 2
 };
 const modalOverlay = {
-  position: "fixed",
-  top: 0, left: 0, width: "100vw", height: "100vh",
-  background: "rgba(20,30,20,.97)",
-  zIndex: 9999,
-  display: "flex", alignItems: "center", justifyContent: "center"
+  position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh",
+  background: "rgba(20,30,20,.97)", zIndex: 9999, display: "flex",
+  alignItems: "center", justifyContent: "center"
 };
 const modalBox = {
-  background: "#181f19",
-  color: "#fff",
-  border: `2px solid ${accentGreen}`,
-  borderRadius: 15,
-  minWidth: 320,
-  maxWidth: 420,
-  padding: 32,
-  boxShadow: "0 8px 44px #00b84a28"
+  background: "#181f19", color: "#fff", border: `2px solid ${accentGreen}`,
+  borderRadius: 15, minWidth: 320, maxWidth: 420, padding: 32, boxShadow: "0 8px 44px #00b84a28"
 };
 
 export default Inventory;

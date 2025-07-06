@@ -8,6 +8,7 @@ import {
   getDoc,
   updateDoc,
   setDoc,
+  addDoc, // <-- make sure this is imported!
 } from "firebase/firestore";
 
 const accentGreen = "#00b84a";
@@ -272,7 +273,7 @@ export default function TradeTab() {
     });
   }
 
-  // --------- Confirm Trade (Cloud Sync, updated logic) ---------
+  // --------- Confirm Trade (Cloud Sync, updated logic + trade log) ---------
   async function doTrade() {
     // Trade is allowed if there is at least 1 card or cash on EITHER side
     if (
@@ -342,6 +343,22 @@ export default function TradeTab() {
     let netCash = (Number(trade.customer.cash) || 0) - (Number(trade.vendor.cash) || 0);
     cash += netCash;
     await setDoc(doc(db, "users", uid), { cashOnHand: cash }, { merge: true });
+
+    // NEW: Write trade to tradeHistory
+    await addDoc(collection(db, "users", uid, "tradeHistory"), {
+      date: new Date().toISOString(),
+      vendor: trade.vendor,
+      customer: trade.customer,
+      summary: {
+        vendorTotal:
+          trade.vendor.cards.reduce((sum, c) => sum + (Number(c.value) || 0), 0) +
+          (Number(trade.vendor.cash) || 0),
+        customerTotal:
+          trade.customer.cards.reduce((sum, c) => sum + (Number(c.value) || 0), 0) +
+          (Number(trade.customer.cash) || 0),
+        cashChange: (Number(trade.customer.cash) || 0) - (Number(trade.vendor.cash) || 0),
+      }
+    });
 
     // Reset trade state/UI
     setTrade({
