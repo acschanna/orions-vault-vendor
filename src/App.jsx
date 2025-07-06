@@ -160,7 +160,7 @@ function LoginScreen() {
         maxWidth: 380,
         border: `2.5px solid ${accentGreen}80`
       }}>
-        <img src="/logo.png" alt="logo" style={{ width: 64, margin: "0 auto 10px", display: "block" }} />
+        <img src="/logo.png" alt="logo" style={{ width: 250, margin: "0 auto 10px", display: "block" }} />
         <div style={{ fontWeight: 800, fontSize: 28, color: accentGreen, textAlign: "center" }}>Orion's Vault</div>
         <div style={{ fontWeight: 600, fontSize: 18, color: "#fff", marginBottom: 22, textAlign: "center" }}>{mode === "login" ? "Vendor Login" : "Register"}</div>
         <form onSubmit={mode === "login" ? handleLogin : handleRegister}>
@@ -346,7 +346,7 @@ function App() {
           <img
             src="/logo.png"
             alt="Orion's Vault Logo"
-            style={{ width: 85, marginBottom: 8 }}
+            style={{ width: 250, marginBottom: 8 }}
           />
           <div
             style={{
