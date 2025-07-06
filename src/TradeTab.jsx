@@ -8,7 +8,6 @@ import {
   getDoc,
   updateDoc,
   setDoc,
-  serverTimestamp,
 } from "firebase/firestore";
 
 const accentGreen = "#00b84a";
@@ -20,7 +19,7 @@ export default function TradeTab() {
   const user = useUser();
   const uid = user?.uid;
 
-  // --- Main trade state (as before) ---
+  // --- Main trade state
   const [trade, setTrade] = useState({
     vendor: { cards: [], cash: 0, cashType: "cash" },
     customer: { cards: [], cash: 0, cashType: "cash" }
@@ -273,37 +272,53 @@ export default function TradeTab() {
     });
   }
 
-  // --------- Confirm Trade (Cloud Sync!) ---------
+  // --------- Confirm Trade (Cloud Sync, updated logic) ---------
   async function doTrade() {
-    let numIncoming = trade.customer.cards.length;
-    if (numIncoming === 0) {
-      setConfirmError("You must add at least one card from customer!");
+    // Trade is allowed if there is at least 1 card or cash on EITHER side
+    if (
+      trade.vendor.cards.length === 0 &&
+      trade.vendor.cash === 0 &&
+      trade.customer.cards.length === 0 &&
+      trade.customer.cash === 0
+    ) {
+      setConfirmError("You must add at least one card or cash to complete the trade!");
       return;
     }
 
-    // --- Cloud Inventory/Cash Logic ---
-    // Remove vendor cards from inventory (if from inventory)
-    let vendorFromInventory = trade.vendor.cards.filter(c => c.origin === "inventory");
-    let vendorInventoryIds = vendorFromInventory.map(c => c.id);
+    // --- Get vendor cards being traded away ---
+    const vendorInventoryCards = trade.vendor.cards.filter(c => c.origin === "inventory");
+    const vendorInventoryIds = vendorInventoryCards.map(c => c.id);
 
+    // Get the *cost* (acquisitionCost) of vendor inventory cards
+    let totalVendorCost = vendorInventoryCards.reduce(
+      (sum, card) => sum + (Number(card.acquisitionCost) || 0),
+      0
+    );
+
+    // Subtract any cash from customer to vendor (customer.cash)
+    let netCost = totalVendorCost - (Number(trade.customer.cash) || 0);
+    if (netCost < 0) netCost = 0;
+
+    // Determine new cards coming IN to vendor inventory
+    const incomingCards = trade.customer.cards;
+    const numIncoming = incomingCards.length;
+    let perCardAcqCost = numIncoming > 0 ? (netCost / numIncoming) : 0;
+
+    // --- Cloud Inventory/Cash Logic ---
     // Get latest inventory
     const invSnap = await getDocs(collection(db, "users", uid, "inventory"));
     let inv = invSnap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
 
+    // Remove vendor's traded-away cards
     inv = inv.filter(card => !vendorInventoryIds.includes(card.id));
 
-    // Add customer cards to inventory (split cost evenly as before)
-    let totalCost =
-      trade.vendor.cards.reduce((sum, c) => sum + (Number(c.value) || 0), 0) +
-      (Number(trade.vendor.cash) || 0);
-    let acqCostPerCard = totalCost / numIncoming;
-
-    let newCards = trade.customer.cards.map(c => ({
+    // Add customer cards to inventory (with new calculated acquisition cost)
+    let newCards = incomingCards.map(c => ({
       setName: c.setName,
       cardName: c.cardName,
       cardNumber: c.number,
       marketValue: c.value,
-      acquisitionCost: acqCostPerCard,
+      acquisitionCost: perCardAcqCost,
       condition: c.condition,
       dateAdded: new Date().toISOString(),
     }));
@@ -803,7 +818,12 @@ export default function TradeTab() {
       <div style={{ textAlign: "center", marginTop: 18 }}>
         <button
           onClick={() => setConfirmOpen(true)}
-          disabled={trade.vendor.cards.length === 0 && trade.vendor.cash === 0}
+          disabled={
+            trade.vendor.cards.length === 0 &&
+            trade.vendor.cash === 0 &&
+            trade.customer.cards.length === 0 &&
+            trade.customer.cash === 0
+          }
           style={{
             background: accentGreen,
             color: "#181b1e",
