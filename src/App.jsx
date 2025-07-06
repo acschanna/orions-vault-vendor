@@ -520,7 +520,7 @@ function App() {
                 <button
                   style={{
                     background: "#1c2338",
-                    color: "#181b1e",
+                    color: "#3e86cf",
                     border: "none",
                     borderRadius: 6,
                     padding: "7px 18px",

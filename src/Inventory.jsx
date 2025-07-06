@@ -14,19 +14,17 @@ import {
   writeBatch,
 } from "firebase/firestore";
 
-// --- Style & User Helpers ---
 const accentGreen = "#00b84a";
 const cardDark = "#181b1e";
 const fontFamily = `'Inter', Arial, Helvetica, sans-serif`;
 const API_KEY = 'd49129a9-8f4c-4130-968a-cd47501df765';
 
-// Sets that have 1st/Unlimited editions
+// Sets with 1st/Unlimited editions
 const SETS_WITH_EDITION = [
   "base1", "base2", "jungle", "fossil", "teamrocket", "gymheroes", "gymchallenge",
   "neoGenesis", "neoDiscovery", "neoRevelation", "neoDestiny", "legendarycollection"
 ];
 
-// CSV helpers (same as before)
 function toCsvValue(v) {
   if (typeof v !== "string") v = String(v);
   if (v.includes(",") || v.includes('"') || v.includes("\n")) {
@@ -35,7 +33,6 @@ function toCsvValue(v) {
   return v;
 }
 function fromCsvRow(row) {
-  // Very basic CSV, split by comma unless quoted
   const reg = /("([^"]|"")*"|[^,]*)(,|$)/g;
   let match, result = [];
   while ((match = reg.exec(row))) {
@@ -47,7 +44,6 @@ function fromCsvRow(row) {
   return result;
 }
 
-// Firebase CRUD for inventory
 async function fetchInventory(uid) {
   const invRef = collection(db, "users", uid, "inventory");
   const q = query(invRef, orderBy("dateAdded", "desc"));
@@ -70,15 +66,13 @@ async function deleteInventory(uid, cardId) {
   const cardRef = doc(db, "users", uid, "inventory", cardId);
   await deleteDoc(cardRef);
 }
-
-// Bulk import
 async function importCsvToInventory(uid, csvRows, setProgress) {
   const invRef = collection(db, "users", uid, "inventory");
   const batch = writeBatch(db);
   let added = 0;
   for (let i = 0; i < csvRows.length; ++i) {
     const card = csvRows[i];
-    const newDoc = doc(invRef); // random id
+    const newDoc = doc(invRef);
     batch.set(newDoc, {
       ...card,
       dateAdded: card.dateAdded || new Date().toISOString(),
@@ -92,17 +86,14 @@ async function importCsvToInventory(uid, csvRows, setProgress) {
   return added;
 }
 
-// -- Helper: should this card get edition editing? --
 function supportsEdition(card) {
   if (!card?.setName) return false;
-  // Check setName by fuzzy match (for imports) or set.id for consistent cards
   const normalized = card.setName.replace(/\s+/g, "").toLowerCase();
   return SETS_WITH_EDITION.some(id =>
     normalized.includes(id.replace(/[^a-z0-9]/gi, "").toLowerCase())
   );
 }
 
-// --- Price refresh logic ---
 async function getCurrentMarketValue(card) {
   if (!card?.tcgPlayerId) return card.marketValue;
   let url = `https://api.pokemontcg.io/v2/cards/${card.tcgPlayerId}`;
@@ -136,7 +127,6 @@ function Inventory() {
   const user = useUser();
   const uid = user?.uid;
 
-  // Main state
   const [inventory, setInventory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
@@ -146,11 +136,10 @@ function Inventory() {
   const [deleteId, setDeleteId] = useState(null);
   const [importResult, setImportResult] = useState("");
   const [importProgress, setImportProgress] = useState("");
-  const [refreshing, setRefreshing] = useState(false); // New for price refresh
-  const [refreshProgress, setRefreshProgress] = useState(""); // New for price refresh
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshProgress, setRefreshProgress] = useState("");
   const fileRef = useRef();
 
-  // Load from Firestore on mount or user change
   useEffect(() => {
     if (!uid) return;
     setLoading(true);
@@ -160,7 +149,6 @@ function Inventory() {
     });
   }, [uid]);
 
-  // Reload inventory
   const refresh = () => {
     if (!uid) return;
     setLoading(true);
@@ -170,12 +158,10 @@ function Inventory() {
     });
   };
 
-  // --- Refresh Inventory Prices ---
   async function refreshInventoryPrices() {
     if (!uid) return;
     setRefreshing(true);
     setRefreshProgress("Checking latest prices...");
-    // Get all inventory docs
     const snap = await getDocs(collection(db, "users", uid, "inventory"));
     let i = 0;
     for (let docSnap of snap.docs) {
@@ -197,7 +183,6 @@ function Inventory() {
     alert("Inventory prices refreshed!");
   }
 
-  // --- Edit modal handlers (edition edit support) ---
   function startEdit(card) {
     setEditing(card);
     setEditData({ ...card });
@@ -217,7 +202,6 @@ function Inventory() {
     setEditData({});
   }
 
-  // Inline market value edit handlers
   function startInlineEdit(idx, value) {
     setInlineEditIdx(idx);
     setInlineEditValue(value !== undefined && value !== null ? value : "");
@@ -239,7 +223,6 @@ function Inventory() {
     setInlineEditValue("");
   }
 
-  // Delete handlers
   function confirmDelete(id) {
     setDeleteId(id);
   }
@@ -250,7 +233,6 @@ function Inventory() {
     setTimeout(refresh, 100);
   }
 
-  // CSV Export (add edition to export)
   function exportCsv() {
     const fields = [
       "id",
@@ -258,7 +240,7 @@ function Inventory() {
       "cardName",
       "cardNumber",
       "condition",
-      "edition", // <-- new
+      "edition",
       "marketValue",
       "acquisitionCost",
       "dateAdded"
@@ -278,7 +260,6 @@ function Inventory() {
     setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
   }
 
-  // CSV Import
   function importCsv(e) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -292,7 +273,7 @@ function Inventory() {
         "cardName",
         "cardNumber",
         "condition",
-        "edition", // <-- new
+        "edition",
         "marketValue",
         "acquisitionCost",
         "dateAdded"
@@ -315,7 +296,6 @@ function Inventory() {
     reader.readAsText(file);
   }
 
-  // Format date
   function niceDate(dt) {
     if (!dt) return "";
     try {
@@ -326,7 +306,7 @@ function Inventory() {
     }
   }
 
-  // ---- UI ----
+  // --- UI ---
   return (
     <div
       style={{
@@ -426,12 +406,15 @@ function Inventory() {
                     <td style={tdStyle}>{card.cardName}</td>
                     <td style={tdStyle}>{card.cardNumber}</td>
                     <td style={tdStyle}>{card.condition}</td>
-                    {/* --- Edition column --- */}
                     <td style={tdStyle}>
                       {supportsEdition(card) ? (
-                        <span style={{ color: card.edition === "firstEdition" ? "#b6b4fd" : "#eaffae" }}>
-                          {card.edition === "firstEdition" ? "1st Edition" : "Unlimited"}
-                        </span>
+                        card.edition === "" || !card.edition ? (
+                          <span style={{ color: "#ccc" }}>-</span>
+                        ) : card.edition === "firstEdition" ? (
+                          <span style={{ color: "#b6b4fd" }}>1st Edition</span>
+                        ) : (
+                          <span style={{ color: "#eaffae" }}>Unlimited</span>
+                        )
                       ) : (
                         <span style={{ color: "#a3ffb4" }}>-</span>
                       )}
@@ -557,10 +540,11 @@ function Inventory() {
                 <div style={{ marginBottom: 10 }}>
                   <label style={inputLabel}>Edition:</label>
                   <select
-                    value={editData.edition || "unlimited"}
+                    value={editData.edition ?? ""}
                     onChange={e => handleEditChange("edition", e.target.value)}
                     style={inputStyle}
                   >
+                    <option value="">(empty)</option>
                     <option value="unlimited">Unlimited</option>
                     <option value="firstEdition">1st Edition</option>
                   </select>
@@ -624,7 +608,6 @@ function Inventory() {
   );
 }
 
-// Simple styled input for edit modal
 function Input({ label, value, onChange, type = "text", prefix = "" }) {
   return (
     <div style={{ marginBottom: 10 }}>
@@ -640,7 +623,6 @@ function Input({ label, value, onChange, type = "text", prefix = "" }) {
   );
 }
 
-// Styles (identical to your original app)
 const thStyle = {
   color: "#caffea",
   fontWeight: 700,
