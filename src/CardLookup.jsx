@@ -244,6 +244,12 @@ export default function CardLookup() {
             placeholder="Card Name (e.g., Charizard)"
             value={searchName}
             onChange={e => setSearchName(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === "Enter") {
+                setPage(1);
+                lookupCard(1);
+              }
+            }}
             style={{
               marginRight: 12,
               padding: 7,
@@ -291,6 +297,12 @@ export default function CardLookup() {
               placeholder="Card Number (e.g., 4, 102/102)"
               value={searchNumber}
               onChange={e => setSearchNumber(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Enter") {
+                  setPage(1);
+                  lookupCard(1);
+                }
+              }}
               style={{
                 marginRight: 8,
                 padding: 7,

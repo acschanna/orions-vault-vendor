@@ -987,11 +987,14 @@ export default function TradeTab() {
                 <option value="setnum">By Set/#</option>
               </select>
               {customerSearchType === "name" ? (
-                <input
-                  placeholder="Card Name"
-                  value={customerLookupQuery}
-                  onChange={e => setCustomerLookupQuery(e.target.value)}
-                  style={{ padding: 7, borderRadius: 5, background: "#181b1e", color: "#fff", border: "1px solid #444", minWidth: 140 }}
+                  <input
+                    placeholder="Card Name"
+                    value={customerLookupQuery}
+                    onChange={e => setCustomerLookupQuery(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") lookupCustomerCards(1);
+                    }}
+                    style={{ padding: 7, borderRadius: 5, background: "#181b1e", color: "#fff", border: "1px solid #444", minWidth: 140 }}
                 />
               ) : (
                 <>
@@ -1006,11 +1009,14 @@ export default function TradeTab() {
                         <option value={s.id} key={s.id}>{s.name}</option>
                       ))}
                   </select>
-                  <input
-                    placeholder="Card #"
-                    value={customerLookupNumber}
-                    onChange={e => setCustomerLookupNumber(e.target.value)}
-                    style={{ padding: 7, borderRadius: 5, background: "#181b1e", color: "#fff", border: "1px solid #444", minWidth: 65 }}
+                    <input
+                      placeholder="Card #"
+                      value={customerLookupNumber}
+                      onChange={e => setCustomerLookupNumber(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === "Enter") lookupCustomerCards(1);
+                      }}
+                      style={{ padding: 7, borderRadius: 5, background: "#181b1e", color: "#fff", border: "1px solid #444", minWidth: 65 }}
                   />
                 </>
               )}

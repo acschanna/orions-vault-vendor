@@ -446,7 +446,11 @@ function Inventory() {
           placeholder="Search name or set"
           value={search}
           onChange={e => setSearch(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === "Enter") setPage(1);
+          }}
         />
+
         <select style={{ ...inputStyle, minWidth: 110 }}
           value={filterSet}
           onChange={e => setFilterSet(e.target.value)}
