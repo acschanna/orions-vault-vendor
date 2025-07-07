@@ -5,12 +5,24 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>React + TypeScript + Replit</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        background:
+          linear-gradient(to bottom, rgba(0,0,0,0.90) 0%, rgba(0,0,0,0.90) 100%),
+          url('/black.png'); /* <-- replace with your actual image name */
+        background-repeat: no-repeat;
+        background-position: center center;
+        background-size: cover;
+        background-attachment: fixed;
+        background-blend-mode: lighten;
+        min-height: 100vh;
+      }
+    </style>
   </head>
-  <link
-    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap"
-    rel="stylesheet"
-  />
-
   <body>
     <div id="root"></div>
     <script type="module" src="/src/index.jsx"></script>
