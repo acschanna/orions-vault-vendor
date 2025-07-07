@@ -968,7 +968,7 @@ export default function TradeTab() {
               border: `2px solid ${accentGreen}`,
               borderRadius: 14,
               minWidth: 390,
-              maxWidth: 600,
+              maxWidth: 650,
               padding: 30,
               boxShadow: "0 8px 44px #00b84a28"
             }}
@@ -987,14 +987,14 @@ export default function TradeTab() {
                 <option value="setnum">By Set/#</option>
               </select>
               {customerSearchType === "name" ? (
-                  <input
-                    placeholder="Card Name"
-                    value={customerLookupQuery}
-                    onChange={e => setCustomerLookupQuery(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === "Enter") lookupCustomerCards(1);
-                    }}
-                    style={{ padding: 7, borderRadius: 5, background: "#181b1e", color: "#fff", border: "1px solid #444", minWidth: 140 }}
+                <input
+                  placeholder="Card Name"
+                  value={customerLookupQuery}
+                  onChange={e => setCustomerLookupQuery(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === "Enter") lookupCustomerCards(1);
+                  }}
+                  style={{ padding: 7, borderRadius: 5, background: "#181b1e", color: "#fff", border: "1px solid #444", minWidth: 140 }}
                 />
               ) : (
                 <>
@@ -1009,14 +1009,14 @@ export default function TradeTab() {
                         <option value={s.id} key={s.id}>{s.name}</option>
                       ))}
                   </select>
-                    <input
-                      placeholder="Card #"
-                      value={customerLookupNumber}
-                      onChange={e => setCustomerLookupNumber(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === "Enter") lookupCustomerCards(1);
-                      }}
-                      style={{ padding: 7, borderRadius: 5, background: "#181b1e", color: "#fff", border: "1px solid #444", minWidth: 65 }}
+                  <input
+                    placeholder="Card #"
+                    value={customerLookupNumber}
+                    onChange={e => setCustomerLookupNumber(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") lookupCustomerCards(1);
+                    }}
+                    style={{ padding: 7, borderRadius: 5, background: "#181b1e", color: "#fff", border: "1px solid #444", minWidth: 65 }}
                   />
                 </>
               )}
@@ -1050,6 +1050,46 @@ export default function TradeTab() {
                 Search
               </button>
             </div>
+            {/* --- Pagination Top --- */}
+            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", margin: "4px 0", gap: 16 }}>
+              <button
+                onClick={() => lookupCustomerCards(Math.max(1, customerLookupPage - 1))}
+                disabled={customerLookupPage === 1 || customerLookupLoading}
+                style={{
+                  background: "#23262a",
+                  color: "#fff",
+                  border: "1px solid #444",
+                  borderRadius: 6,
+                  padding: "6px 16px",
+                  fontWeight: 700,
+                  fontSize: 15,
+                  cursor: customerLookupPage === 1 ? "not-allowed" : "pointer",
+                  opacity: customerLookupPage === 1 ? 0.6 : 1
+                }}
+              >
+                &#8592; Prev
+              </button>
+              <span style={{ color: accentGreen, fontWeight: 700, fontSize: 16 }}>
+                Page {customerLookupPage}{customerLookupTotalResults && customerLookupResults.length > 0 ? ` of ${Math.ceil(customerLookupTotalResults / 8)}` : ""}
+              </span>
+              <button
+                onClick={() => lookupCustomerCards(customerLookupPage + 1)}
+                disabled={customerLookupLoading || customerLookupResults.length < 8}
+                style={{
+                  background: "#23262a",
+                  color: "#fff",
+                  border: "1px solid #444",
+                  borderRadius: 6,
+                  padding: "6px 16px",
+                  fontWeight: 700,
+                  fontSize: 15,
+                  cursor: customerLookupResults.length < 8 ? "not-allowed" : "pointer",
+                  opacity: customerLookupResults.length < 8 ? 0.6 : 1
+                }}
+              >
+                Next &#8594;
+              </button>
+            </div>
             {customerLookupLoading ? (
               <div style={{ color: accentGreen, fontWeight: 700, padding: 28, textAlign: "center" }}>
                 Searching...
@@ -1062,77 +1102,132 @@ export default function TradeTab() {
                   </div>
                 ) : (
                   <>
-                    <div style={{ fontWeight: 700, color: "#caffea", margin: "6px 0 8px" }}>
-                      Results ({customerLookupResults.length} of {customerLookupTotalResults || "?"}):
-                    </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
+                    {/* Results grid with card image and set icon */}
+                    <div style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+                      gap: 14,
+                      marginTop: 10,
+                      marginBottom: 10
+                    }}>
                       {customerLookupResults.map(card => (
                         <div
                           key={card.id}
                           style={{
                             background: "#23272b",
                             borderRadius: 10,
-                            padding: 14,
-                            width: 180,
-                            marginBottom: 8,
-                            boxShadow: "0 1px 4px #00b84a13"
+                            padding: 10,
+                            boxShadow: "0 1px 4px #00b84a13",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 12
                           }}
                         >
-                          <div style={{ fontWeight: 700, color: accentGreen, fontSize: 15 }}>{card.name}</div>
-                          <div style={{ color: "#aaa", fontSize: 13, margin: "3px 0" }}>
-                            Set: {card.set?.name}<br />
-                            #{card.number}
-                          </div>
-                          <div style={{ color: "#7ff", fontSize: 15, marginBottom: 6 }}>
-                            Market: $
-                            {card.tcgplayer?.prices?.normal?.market?.toFixed(2) ||
-                              card.tcgplayer?.prices?.holofoil?.market?.toFixed(2) ||
-                              card.tcgplayer?.prices?.reverseHolofoil?.market?.toFixed(2) ||
-                              "?.??"}
-                          </div>
-                          <button
+                          {/* Card Image */}
+                          <img
+                            src={card.images?.small}
+                            alt={card.name}
                             style={{
-                              background: accentGreen,
-                              color: "#181b1e",
-                              border: "none",
+                              width: 56,
+                              height: 78,
+                              objectFit: "cover",
                               borderRadius: 6,
-                              fontWeight: 700,
-                              padding: "6px 16px",
-                              fontSize: 14,
-                              cursor: "pointer",
-                              marginTop: 4
+                              border: "1px solid #333",
+                              background: "#232"
                             }}
-                            onClick={() => addCustomerCard(card)}
-                          >
-                            Add to Trade
-                          </button>
+                          />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            {/* Name and set with set icon */}
+                            <div style={{ fontWeight: 700, color: accentGreen, fontSize: 15, display: "flex", alignItems: "center", gap: 7 }}>
+                              {card.name}
+                              {card.set?.images?.symbol && (
+                                <img
+                                  src={card.set.images.symbol}
+                                  alt="Set"
+                                  style={{
+                                    width: 22,
+                                    height: 22,
+                                    background: "#fff",
+                                    borderRadius: 5,
+                                    border: "1px solid #ddd"
+                                  }}
+                                />
+                              )}
+                            </div>
+                            <div style={{ color: "#aaa", fontSize: 13, margin: "2px 0" }}>
+                              Set: {card.set?.name} &nbsp; #{card.number}
+                            </div>
+                            <div style={{ color: "#7ff", fontSize: 14, marginBottom: 4 }}>
+                              Market: $
+                              {card.tcgplayer?.prices?.normal?.market?.toFixed(2) ||
+                                card.tcgplayer?.prices?.holofoil?.market?.toFixed(2) ||
+                                card.tcgplayer?.prices?.reverseHolofoil?.market?.toFixed(2) ||
+                                "?.??"}
+                            </div>
+                            <button
+                              style={{
+                                background: accentGreen,
+                                color: "#181b1e",
+                                border: "none",
+                                borderRadius: 6,
+                                fontWeight: 700,
+                                padding: "6px 14px",
+                                fontSize: 14,
+                                cursor: "pointer"
+                              }}
+                              onClick={() => addCustomerCard(card)}
+                            >
+                              Add to Trade
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
-                    {customerLookupTotalResults > customerLookupResults.length && (
-                      <div style={{ marginTop: 12 }}>
-                        <button
-                          onClick={() => lookupCustomerCards(customerLookupPage + 1)}
-                          style={{
-                            background: accentGreen,
-                            color: "#181b1e",
-                            border: "none",
-                            borderRadius: 6,
-                            fontWeight: 700,
-                            padding: "7px 22px",
-                            fontSize: 14,
-                            cursor: "pointer"
-                          }}
-                        >
-                          Next Page &gt;
-                        </button>
-                      </div>
-                    )}
+                    {/* Pagination bottom */}
+                    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", margin: "8px 0 0 0", gap: 16 }}>
+                      <button
+                        onClick={() => lookupCustomerCards(Math.max(1, customerLookupPage - 1))}
+                        disabled={customerLookupPage === 1 || customerLookupLoading}
+                        style={{
+                          background: "#23262a",
+                          color: "#fff",
+                          border: "1px solid #444",
+                          borderRadius: 6,
+                          padding: "6px 16px",
+                          fontWeight: 700,
+                          fontSize: 15,
+                          cursor: customerLookupPage === 1 ? "not-allowed" : "pointer",
+                          opacity: customerLookupPage === 1 ? 0.6 : 1
+                        }}
+                      >
+                        &#8592; Prev
+                      </button>
+                      <span style={{ color: accentGreen, fontWeight: 700, fontSize: 16 }}>
+                        Page {customerLookupPage}{customerLookupTotalResults && customerLookupResults.length > 0 ? ` of ${Math.ceil(customerLookupTotalResults / 8)}` : ""}
+                      </span>
+                      <button
+                        onClick={() => lookupCustomerCards(customerLookupPage + 1)}
+                        disabled={customerLookupLoading || customerLookupResults.length < 8}
+                        style={{
+                          background: "#23262a",
+                          color: "#fff",
+                          border: "1px solid #444",
+                          borderRadius: 6,
+                          padding: "6px 16px",
+                          fontWeight: 700,
+                          fontSize: 15,
+                          cursor: customerLookupResults.length < 8 ? "not-allowed" : "pointer",
+                          opacity: customerLookupResults.length < 8 ? 0.6 : 1
+                        }}
+                      >
+                        Next &#8594;
+                      </button>
+                    </div>
                   </>
                 )}
               </>
             )}
-            <button
+      <button
               onClick={() => setShowCustomerLookup(false)}
               style={{
                 marginTop: 18,
@@ -1151,6 +1246,6 @@ export default function TradeTab() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
+          </div>
+        );
+      }
