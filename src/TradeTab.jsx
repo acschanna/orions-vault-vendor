@@ -8,6 +8,8 @@ import {
   getDoc,
   updateDoc,
   setDoc,
+  addDoc,
+  deleteDoc,
 } from "firebase/firestore";
 import "./TradeTab.css";
 
@@ -202,7 +204,7 @@ export default function TradeTab() {
     }));
   }
 
-  // Customer handlers (no changes needed, see previous version)
+  // Customer handlers
   function addManualCustomerCard() {
     if (!manualCustomer.name || !manualCustomer.value || isNaN(manualCustomer.value)) return;
     setTrade(prev => ({
@@ -332,7 +334,9 @@ export default function TradeTab() {
             id: card.id + "_" + Date.now(),
             cardName: card.name,
             setName: card.set?.name,
-            number: card.number,
+            cardNumber: card.number,
+            tcgPlayerId: card.id,
+            images: card.images,
             value:
               card.tcgplayer?.prices?.normal?.market ??
               card.tcgplayer?.prices?.holofoil?.market ??
@@ -362,7 +366,7 @@ export default function TradeTab() {
     setConfirmError("");
   }
 
-  // Confirm trade (fix: properly log, update inventory, update cash)
+  // Confirm trade: customer adds get added, vendor inventory removals
   async function confirmTrade() {
     if (!uid) return;
     setConfirmError("");
@@ -394,21 +398,58 @@ export default function TradeTab() {
     const historyRef = collection(db, "users", uid, "tradeHistory");
     await setDoc(doc(historyRef), tradeRecord);
 
-    // Remove traded inventory
+    // 1. Remove vendor inventory items that are part of the trade
     for (let c of trade.vendor.cards) {
       if (c.origin === "inventory" && c.id) {
-        await updateDoc(doc(db, "users", uid, "inventory", c.id), { traded: true });
+        try {
+          await deleteDoc(doc(db, "users", uid, "inventory", c.id));
+        } catch {}
       }
     }
     for (let c of trade.vendor.sealed) {
       if (c.origin === "inventory" && c.id) {
-        await updateDoc(doc(db, "users", uid, "inventory", c.id), { traded: true });
+        try {
+          await deleteDoc(doc(db, "users", uid, "inventory", c.id));
+        } catch {}
       }
     }
 
-    // Subtract cash if applicable
-    if (trade.vendor.cash > 0) {
-      const cashAfter = cashOnHand - trade.vendor.cash;
+    // 2. Add customer cards/sealed to our inventory
+    for (let card of trade.customer.cards) {
+      try {
+        await addDoc(collection(db, "users", uid, "inventory"), {
+          type: "card",
+          setName: card.setName,
+          cardName: card.cardName,
+          cardNumber: card.cardNumber,
+          tcgPlayerId: card.tcgPlayerId,
+          images: card.images || undefined,
+          marketValue: card.value,
+          acquisitionCost: card.value,
+          condition: card.condition,
+          dateAdded: new Date().toISOString(),
+        });
+      } catch {}
+    }
+    for (let prod of trade.customer.sealed) {
+      try {
+        await addDoc(collection(db, "users", uid, "inventory"), {
+          type: "sealed",
+          productName: prod.productName,
+          setName: prod.setName,
+          productType: prod.productType,
+          quantity: prod.quantity,
+          marketValue: prod.value,
+          acquisitionCost: prod.value,
+          condition: prod.condition,
+          dateAdded: new Date().toISOString(),
+        });
+      } catch {}
+    }
+
+    // Subtract/add cash if applicable
+    if (trade.vendor.cash > 0 || trade.customer.cash > 0) {
+      const cashAfter = cashOnHand - Number(trade.vendor.cash || 0) + Number(trade.customer.cash || 0);
       await setDoc(doc(db, "users", uid), { cashOnHand: cashAfter }, { merge: true });
       setCashOnHand(cashAfter);
     }
@@ -416,6 +457,9 @@ export default function TradeTab() {
     clearTrade();
     setConfirmOpen(false);
     alert("Trade completed and logged!");
+    // reload inventory
+    const invSnap = await getDocs(collection(db, "users", uid, "inventory"));
+    setInventory(invSnap.docs.map(doc => ({ ...doc.data(), id: doc.id })));
   }
 
   const vendorTotal =
@@ -967,6 +1011,7 @@ export default function TradeTab() {
                 <table className="trade-side-table">
                   <thead>
                     <tr>
+                      <th></th>
                       <th>Name</th>
                       <th>Set</th>
                       <th>#</th>
@@ -977,6 +1022,21 @@ export default function TradeTab() {
                   <tbody>
                     {customerLookupResults.map(card => (
                       <tr key={card.id}>
+                        <td>
+                          <img
+                            src={card.images?.medium || card.images?.small}
+                            alt={card.name}
+                            style={{
+                              width: 48,
+                              height: 68,
+                              objectFit: "contain",
+                              borderRadius: 6,
+                              background: "#181b1e",
+                              boxShadow: "0 1px 4px #121b1277",
+                              border: "1px solid #242"
+                            }}
+                          />
+                        </td>
                         <td>{card.name}</td>
                         <td>{card.set?.name}</td>
                         <td>{card.number}</td>
