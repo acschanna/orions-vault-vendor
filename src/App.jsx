@@ -370,7 +370,7 @@
               backgroundSize: "cover",
               backgroundPosition: "center",
               backgroundRepeat: "no-repeat",
-              opacity: 0.15,
+              opacity: 1.0,
               transition: "opacity 0.5s"
             }}
           />
