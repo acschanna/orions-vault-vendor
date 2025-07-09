@@ -8,33 +8,54 @@ import {
   getDoc,
   updateDoc,
   setDoc,
-  addDoc, // <-- make sure this is imported!
 } from "firebase/firestore";
+import "./TradeTab.css";
 
 const accentGreen = "#00b84a";
-const cardDark = "#181b1e";
-const fontFamily = `'Inter', Arial, Helvetica, sans-serif`;
 const API_KEY = 'd49129a9-8f4c-4130-968a-cd47501df765';
 
 export default function TradeTab() {
   const user = useUser();
   const uid = user?.uid;
 
-  // --- Main trade state
+  // Trade state
   const [trade, setTrade] = useState({
-    vendor: { cards: [], cash: 0, cashType: "cash" },
-    customer: { cards: [], cash: 0, cashType: "cash" }
+    vendor: { cards: [], sealed: [], cash: 0, cashType: "cash" },
+    customer: { cards: [], sealed: [], cash: 0, cashType: "cash" }
   });
+
+  // Confirm modal state
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmError, setConfirmError] = useState("");
 
-  // Vendor add state
+  // Vendor manual add
   const [showVendorManual, setShowVendorManual] = useState(false);
   const [manualVendor, setManualVendor] = useState({ name: "", value: "", condition: "NM" });
 
-  // Customer add state
+  // Vendor sealed add
+  const [showVendorSealed, setShowVendorSealed] = useState(false);
+  const [manualVendorSealed, setManualVendorSealed] = useState({
+    productName: "", setName: "", productType: "Booster Box", quantity: 1, value: "", condition: "Sealed"
+  });
+
+  // Vendor inventory search
+  const [vendorSearch, setVendorSearch] = useState("");
+  const [vendorSearchResults, setVendorSearchResults] = useState([]);
+  const [inventory, setInventory] = useState([]);
+  const [inventoryLoading, setInventoryLoading] = useState(true);
+
+  // Vendor cash
+  const [cashOnHand, setCashOnHand] = useState(0);
+
+  // Customer manual add
   const [showCustomerManual, setShowCustomerManual] = useState(false);
   const [manualCustomer, setManualCustomer] = useState({ name: "", value: "", condition: "NM" });
+
+  // Customer sealed add
+  const [showCustomerSealed, setShowCustomerSealed] = useState(false);
+  const [manualCustomerSealed, setManualCustomerSealed] = useState({
+    productName: "", setName: "", productType: "Booster Box", quantity: 1, value: "", condition: "Sealed"
+  });
 
   // Customer lookup
   const [showCustomerLookup, setShowCustomerLookup] = useState(false);
@@ -50,20 +71,12 @@ export default function TradeTab() {
   const [sets, setSets] = useState([]);
   const [setsLoading, setSetsLoading] = useState(false);
 
-  // Cloud inventory/cash
-  const [inventory, setInventory] = useState([]);
-  const [cashOnHand, setCashOnHand] = useState(0);
-  const [inventoryLoading, setInventoryLoading] = useState(true);
-
-  // -------- Cloud Inventory/Cash Fetch ---------
   useEffect(() => {
     if (!uid) return;
     async function fetchAll() {
       setInventoryLoading(true);
-      // Inventory
       const invSnap = await getDocs(collection(db, "users", uid, "inventory"));
       setInventory(invSnap.docs.map(doc => ({ ...doc.data(), id: doc.id })));
-      // Cash
       const userSnap = await getDoc(doc(db, "users", uid));
       const d = userSnap.data() || {};
       setCashOnHand(Number(d.cashOnHand || 0));
@@ -72,24 +85,42 @@ export default function TradeTab() {
     fetchAll();
   }, [uid]);
 
-  // -------- Vendor Side Handlers ---------
+  // Vendor inventory search results
+  useEffect(() => {
+    if (!vendorSearch) {
+      setVendorSearchResults([]);
+      return;
+    }
+    setVendorSearchResults(
+      inventory.filter(item =>
+        (item.cardName?.toLowerCase().includes(vendorSearch.toLowerCase()) ||
+          item.setName?.toLowerCase().includes(vendorSearch.toLowerCase()) ||
+          item.cardNumber?.toLowerCase().includes(vendorSearch.toLowerCase()))
+        && !trade.vendor.cards.find(c => c.id === item.id)
+        && !trade.vendor.sealed.find(c => c.id === item.id)
+      )
+    );
+  }, [vendorSearch, inventory, trade.vendor.cards, trade.vendor.sealed]);
+
+  // Vendor handlers
   function addVendorFromInventory(id) {
-    const card = inventory.find(c => c.id === id);
-    if (!card) return;
-    setTrade(prev => ({
-      ...prev,
-      vendor: {
-        ...prev.vendor,
-        cards: [
-          ...prev.vendor.cards,
-          {
-            ...card,
-            value: card.marketValue,
-            origin: "inventory"
-          }
-        ]
-      }
-    }));
+    const item = inventory.find(c => c.id === id);
+    if (!item) return;
+    if (item.type === "sealed") {
+      setTrade(prev => ({
+        ...prev,
+        vendor: { ...prev.vendor, sealed: [...prev.vendor.sealed, { ...item, origin: "inventory" }] }
+      }));
+    } else {
+      setTrade(prev => ({
+        ...prev,
+        vendor: {
+          ...prev.vendor,
+          cards: [...prev.vendor.cards, { ...item, value: item.marketValue, origin: "inventory" }]
+        }
+      }));
+    }
+    setVendorSearch(""); // Clear search
   }
   function addManualVendorCard() {
     if (!manualVendor.name || !manualVendor.value || isNaN(manualVendor.value)) return;
@@ -112,6 +143,27 @@ export default function TradeTab() {
     setManualVendor({ name: "", value: "", condition: "NM" });
     setShowVendorManual(false);
   }
+  function addManualVendorSealed() {
+    if (!manualVendorSealed.productName || !manualVendorSealed.value || isNaN(manualVendorSealed.value)) return;
+    setTrade(prev => ({
+      ...prev,
+      vendor: {
+        ...prev.vendor,
+        sealed: [
+          ...prev.vendor.sealed,
+          {
+            id: "sealed_manual_" + Date.now(),
+            ...manualVendorSealed,
+            value: Number(manualVendorSealed.value),
+            origin: "manual",
+            type: "sealed"
+          }
+        ]
+      }
+    }));
+    setManualVendorSealed({ productName: "", setName: "", productType: "Booster Box", quantity: 1, value: "", condition: "Sealed" });
+    setShowVendorSealed(false);
+  }
   function removeVendorCard(id) {
     setTrade(prev => ({
       ...prev,
@@ -121,8 +173,36 @@ export default function TradeTab() {
       }
     }));
   }
+  function removeVendorSealed(id) {
+    setTrade(prev => ({
+      ...prev,
+      vendor: {
+        ...prev.vendor,
+        sealed: prev.vendor.sealed.filter(c => c.id !== id)
+      }
+    }));
+  }
+  function setVendorCash(val) {
+    if (isNaN(val)) return;
+    setTrade(prev => ({
+      ...prev,
+      vendor: {
+        ...prev.vendor,
+        cash: Math.max(0, Math.floor(Number(val)))
+      }
+    }));
+  }
+  function setVendorCashType(val) {
+    setTrade(prev => ({
+      ...prev,
+      vendor: {
+        ...prev.vendor,
+        cashType: val
+      }
+    }));
+  }
 
-  // -------- Customer Side Handlers ---------
+  // Customer handlers (no changes needed, see previous version)
   function addManualCustomerCard() {
     if (!manualCustomer.name || !manualCustomer.value || isNaN(manualCustomer.value)) return;
     setTrade(prev => ({
@@ -144,6 +224,27 @@ export default function TradeTab() {
     setManualCustomer({ name: "", value: "", condition: "NM" });
     setShowCustomerManual(false);
   }
+  function addManualCustomerSealed() {
+    if (!manualCustomerSealed.productName || !manualCustomerSealed.value || isNaN(manualCustomerSealed.value)) return;
+    setTrade(prev => ({
+      ...prev,
+      customer: {
+        ...prev.customer,
+        sealed: [
+          ...prev.customer.sealed,
+          {
+            id: "sealed_manual_" + Date.now(),
+            ...manualCustomerSealed,
+            value: Number(manualCustomerSealed.value),
+            origin: "manual",
+            type: "sealed"
+          }
+        ]
+      }
+    }));
+    setManualCustomerSealed({ productName: "", setName: "", productType: "Booster Box", quantity: 1, value: "", condition: "Sealed" });
+    setShowCustomerSealed(false);
+  }
   function removeCustomerCard(id) {
     setTrade(prev => ({
       ...prev,
@@ -153,24 +254,12 @@ export default function TradeTab() {
       }
     }));
   }
-
-  // --------- Cash ---------
-  function setVendorCash(val) {
-    if (isNaN(val)) return;
+  function removeCustomerSealed(id) {
     setTrade(prev => ({
       ...prev,
-      vendor: {
-        ...prev.vendor,
-        cash: Math.max(0, Math.floor(Number(val)))
-      }
-    }));
-  }
-  function setVendorCashType(val) {
-    setTrade(prev => ({
-      ...prev,
-      vendor: {
-        ...prev.vendor,
-        cashType: val
+      customer: {
+        ...prev.customer,
+        sealed: prev.customer.sealed.filter(c => c.id !== id)
       }
     }));
   }
@@ -194,7 +283,7 @@ export default function TradeTab() {
     }));
   }
 
-  // --------- Lookup ---------
+  // Customer lookup
   useEffect(() => {
     if (!showCustomerLookup) return;
     setSetsLoading(true);
@@ -265,309 +354,152 @@ export default function TradeTab() {
     setCustomerLookupTotalResults(null);
   }
 
-  // --------- Clear Trade ---------
   function clearTrade() {
     setTrade({
-      vendor: { cards: [], cash: 0, cashType: "cash" },
-      customer: { cards: [], cash: 0, cashType: "cash" }
+      vendor: { cards: [], sealed: [], cash: 0, cashType: "cash" },
+      customer: { cards: [], sealed: [], cash: 0, cashType: "cash" }
     });
+    setConfirmError("");
   }
 
-  // --------- Confirm Trade (Cloud Sync, updated logic + trade log) ---------
-  async function doTrade() {
-    // Trade is allowed if there is at least 1 card or cash on EITHER side
-    if (
-      trade.vendor.cards.length === 0 &&
-      trade.vendor.cash === 0 &&
-      trade.customer.cards.length === 0 &&
-      trade.customer.cash === 0
-    ) {
-      setConfirmError("You must add at least one card or cash to complete the trade!");
+  // Confirm trade (fix: properly log, update inventory, update cash)
+  async function confirmTrade() {
+    if (!uid) return;
+    setConfirmError("");
+
+    const totalVendor = trade.vendor.cards.reduce((a, c) => a + Number(c.value || 0), 0)
+      + trade.vendor.sealed.reduce((a, c) => a + Number(c.value || 0), 0)
+      + Number(trade.vendor.cash || 0);
+    const totalCustomer = trade.customer.cards.reduce((a, c) => a + Number(c.value || 0), 0)
+      + trade.customer.sealed.reduce((a, c) => a + Number(c.value || 0), 0)
+      + Number(trade.customer.cash || 0);
+
+    if (totalVendor === 0 && totalCustomer === 0) {
+      setConfirmError("Cannot confirm empty trade.");
+      return;
+    }
+    if (trade.vendor.cash > cashOnHand) {
+      setConfirmError("You don't have enough cash on hand!");
       return;
     }
 
-    // --- Get vendor cards being traded away ---
-    const vendorInventoryCards = trade.vendor.cards.filter(c => c.origin === "inventory");
-    const vendorInventoryIds = vendorInventoryCards.map(c => c.id);
-
-    // Get the *cost* (acquisitionCost) of vendor inventory cards
-    let totalVendorCost = vendorInventoryCards.reduce(
-      (sum, card) => sum + (Number(card.acquisitionCost) || 0),
-      0
-    );
-
-    // Subtract any cash from customer to vendor (customer.cash)
-    let netCost = totalVendorCost - (Number(trade.customer.cash) || 0);
-    if (netCost < 0) netCost = 0;
-
-    // Determine new cards coming IN to vendor inventory
-    const incomingCards = trade.customer.cards;
-    const numIncoming = incomingCards.length;
-    let perCardAcqCost = numIncoming > 0 ? (netCost / numIncoming) : 0;
-
-    // --- Cloud Inventory/Cash Logic ---
-    // Get latest inventory
-    const invSnap = await getDocs(collection(db, "users", uid, "inventory"));
-    let inv = invSnap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-
-    // Remove vendor's traded-away cards
-    inv = inv.filter(card => !vendorInventoryIds.includes(card.id));
-
-    // Add customer cards to inventory (with new calculated acquisition cost)
-    let newCards = incomingCards.map(c => ({
-      setName: c.setName,
-      cardName: c.cardName,
-      cardNumber: c.number,
-      marketValue: c.value,
-      acquisitionCost: perCardAcqCost,
-      condition: c.condition,
-      dateAdded: new Date().toISOString(),
-    }));
-
-    // Write new inventory (delete old, add new)
-    // First, delete vendor's traded cards
-    for (let cardId of vendorInventoryIds) {
-      try {
-        await setDoc(doc(db, "users", uid, "inventory", cardId), {}, { merge: false });
-        await updateDoc(doc(db, "users", uid, "inventory", cardId), { deleted: true }); // optional marker
-      } catch {}
-    }
-    // Then, add all new customer cards
-    for (let card of newCards) {
-      await setDoc(doc(collection(db, "users", uid, "inventory")), card);
-    }
-
-    // Adjust cash: vendor gets customer cash, loses vendor cash
-    let userSnap = await getDoc(doc(db, "users", uid));
-    let cash = Number(userSnap.data()?.cashOnHand || 0);
-    let netCash = (Number(trade.customer.cash) || 0) - (Number(trade.vendor.cash) || 0);
-    cash += netCash;
-    await setDoc(doc(db, "users", uid), { cashOnHand: cash }, { merge: true });
-
-    // NEW: Write trade to tradeHistory
-    await addDoc(collection(db, "users", uid, "tradeHistory"), {
+    // Save to Firestore trade history
+    const tradeRecord = {
+      ...trade,
       date: new Date().toISOString(),
-      vendor: trade.vendor,
-      customer: trade.customer,
-      summary: {
-        vendorTotal:
-          trade.vendor.cards.reduce((sum, c) => sum + (Number(c.value) || 0), 0) +
-          (Number(trade.vendor.cash) || 0),
-        customerTotal:
-          trade.customer.cards.reduce((sum, c) => sum + (Number(c.value) || 0), 0) +
-          (Number(trade.customer.cash) || 0),
-        cashChange: (Number(trade.customer.cash) || 0) - (Number(trade.vendor.cash) || 0),
+      vendorEmail: user.email,
+      valueVendor: totalVendor,
+      valueCustomer: totalCustomer
+    };
+    const historyRef = collection(db, "users", uid, "tradeHistory");
+    await setDoc(doc(historyRef), tradeRecord);
+
+    // Remove traded inventory
+    for (let c of trade.vendor.cards) {
+      if (c.origin === "inventory" && c.id) {
+        await updateDoc(doc(db, "users", uid, "inventory", c.id), { traded: true });
       }
-    });
+    }
+    for (let c of trade.vendor.sealed) {
+      if (c.origin === "inventory" && c.id) {
+        await updateDoc(doc(db, "users", uid, "inventory", c.id), { traded: true });
+      }
+    }
 
-    // Reset trade state/UI
-    setTrade({
-      vendor: { cards: [], cash: 0, cashType: "cash" },
-      customer: { cards: [], cash: 0, cashType: "cash" }
-    });
+    // Subtract cash if applicable
+    if (trade.vendor.cash > 0) {
+      const cashAfter = cashOnHand - trade.vendor.cash;
+      await setDoc(doc(db, "users", uid), { cashOnHand: cashAfter }, { merge: true });
+      setCashOnHand(cashAfter);
+    }
+
+    clearTrade();
     setConfirmOpen(false);
-
-    // Reload inventory/cash from Firestore
-    const invSnap2 = await getDocs(collection(db, "users", uid, "inventory"));
-    setInventory(invSnap2.docs.map(doc => ({ ...doc.data(), id: doc.id })));
-    const userSnap2 = await getDoc(doc(db, "users", uid));
-    setCashOnHand(Number(userSnap2.data()?.cashOnHand || 0));
+    alert("Trade completed and logged!");
   }
 
-  // --------- Totals ---------
   const vendorTotal =
-    trade.vendor.cards.reduce((sum, c) => sum + (Number(c.value) || 0), 0) +
-    (Number(trade.vendor.cash) || 0);
+    trade.vendor.cards.reduce((sum, c) => sum + Number(c.value || 0), 0) +
+    trade.vendor.sealed.reduce((sum, c) => sum + Number(c.value || 0), 0) +
+    Number(trade.vendor.cash || 0);
   const customerTotal =
-    trade.customer.cards.reduce((sum, c) => sum + (Number(c.value) || 0), 0) +
-    (Number(trade.customer.cash) || 0);
+    trade.customer.cards.reduce((sum, c) => sum + Number(c.value || 0), 0) +
+    trade.customer.sealed.reduce((sum, c) => sum + Number(c.value || 0), 0) +
+    Number(trade.customer.cash || 0);
 
-  // --------- UI ---------
   return (
-    <div>
-      <h2 style={{ color: accentGreen, fontWeight: 700, marginTop: 0, textAlign: "center" }}>Trade Builder</h2>
-      <div
-        style={{
-          display: "flex",
-          gap: 48,
-          justifyContent: "center",
-          alignItems: "flex-start",
-          marginBottom: 28,
-          flexWrap: "wrap"
-        }}
-      >
+    <div className="trade-tab-root">
+      <h2 className="trade-tab-title">Trade Builder</h2>
+      <div className="trade-row">
         {/* -------- Vendor Side -------- */}
-        <div style={{
-          background: "#161b1b",
-          padding: 30,
-          borderRadius: 18,
-          minWidth: 420,
-          maxWidth: 500,
-          flex: "1 1 440px",
-          border: `2.5px solid ${accentGreen}33`
-        }}>
-          <div style={{ fontWeight: 700, color: accentGreen, fontSize: 20, marginBottom: 8 }}>Vendor Side</div>
-          <div style={{ marginBottom: 14 }}>
-            <select
-              defaultValue=""
-              style={{
-                fontFamily,
-                fontSize: 16,
-                padding: 9,
-                marginRight: 8,
-                background: cardDark,
-                color: "#fff",
-                border: "1px solid #333",
-                borderRadius: 7
-              }}
-              onChange={e => {
-                if (e.target.value) addVendorFromInventory(e.target.value);
-                e.target.value = "";
-              }}
-              disabled={inventoryLoading}
-            >
-              <option value="">Add from Inventory...</option>
-              {inventory.map(card => (
-                <option value={card.id} key={card.id}>
-                  {card.cardName || card.name} ({card.setName || card.set?.name}) #{card.cardNumber}
-                </option>
-              ))}
-            </select>
+        <div className="trade-side vendor-side-box">
+          <div className="trade-side-title">Your Side (Vendor)</div>
+          <div className="trade-side-controls">
             <button
-              onClick={() => setShowVendorManual(v => !v)}
-              style={{
-                padding: "9px 16px",
-                background: "#2a2",
-                color: "#fff",
-                border: "none",
-                borderRadius: 7,
-                fontWeight: 700,
-                marginLeft: 3,
-                cursor: "pointer"
-              }}
+              className="trade-side-btn"
+              onClick={() => setShowVendorManual(true)}
             >
-              Add Manual Card
+              Add Card (Manual)
+            </button>
+            <button
+              className="trade-side-btn sealed"
+              onClick={() => setShowVendorSealed(true)}
+            >
+              Add Sealed Product
+            </button>
+            <button
+              className="trade-side-btn cancel"
+              onClick={clearTrade}
+            >
+              Clear Trade
             </button>
           </div>
-          {showVendorManual && (
-            <div style={{ marginBottom: 14, background: "#233", borderRadius: 7, padding: 10 }}>
-              <input
-                placeholder="Card Name"
-                value={manualVendor.name}
-                onChange={e => setManualVendor(m => ({ ...m, name: e.target.value }))}
-                style={{
-                  marginRight: 8,
-                  padding: 7,
-                  borderRadius: 5,
-                  border: "1px solid #444",
-                  background: "#181b1e",
-                  color: "#fff",
-                  width: 140
-                }}
-              />
-              <select
-                value={manualVendor.condition}
-                onChange={e => setManualVendor(m => ({ ...m, condition: e.target.value }))}
-                style={{
-                  marginRight: 8,
-                  padding: 7,
-                  borderRadius: 5,
-                  background: "#181b1e",
-                  color: "#fff",
-                  border: "1px solid #444"
-                }}
-              >
-                <option value="NM">NM</option>
-                <option value="LP">LP</option>
-                <option value="MP">MP</option>
-                <option value="HP">HP</option>
-                <option value="DMG">DMG</option>
-              </select>
-              <input
-                placeholder="Value"
-                type="number"
-                min="0"
-                value={manualVendor.value}
-                onChange={e => setManualVendor(m => ({ ...m, value: e.target.value }))}
-                style={{
-                  marginRight: 8,
-                  padding: 7,
-                  borderRadius: 5,
-                  border: "1px solid #444",
-                  background: "#181b1e",
-                  color: "#fff",
-                  width: 95
-                }}
-              />
-              <button
-                onClick={addManualVendorCard}
-                style={{
-                  background: accentGreen,
-                  color: "#181b1e",
-                  padding: "7px 16px",
-                  border: "none",
-                  borderRadius: 6,
-                  fontWeight: 700,
-                  cursor: "pointer"
-                }}
-                disabled={!manualVendor.name || !manualVendor.value}
-              >
-                Add
-              </button>
-              <button
-                onClick={() => setShowVendorManual(false)}
-                style={{
-                  marginLeft: 8,
-                  background: "#23262a",
-                  color: "#fff",
-                  padding: "7px 16px",
-                  border: `1px solid #444`,
-                  borderRadius: 6,
-                  fontWeight: 700,
-                  cursor: "pointer"
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-
-          <div style={{ fontWeight: 600, color: "#fff", margin: "12px 0 7px" }}>
-            Cards ({trade.vendor.cards.length}):
-          </div>
-          <div style={{ marginBottom: 18, minHeight: 80 }}>
-            {trade.vendor.cards.length === 0 ? (
-              <div style={{ color: "#ccc" }}>No cards yet.</div>
-            ) : (
-              <table style={{ width: "100%", background: "none" }}>
+          <div style={{ marginBottom: 12 }}>
+            <input
+              className="inventory-input"
+              placeholder="Search your inventory"
+              value={vendorSearch}
+              onChange={e => setVendorSearch(e.target.value)}
+              style={{ width: "98%", marginBottom: 10 }}
+              onKeyDown={e => { if (e.key === "Enter") { if (vendorSearchResults.length > 0) addVendorFromInventory(vendorSearchResults[0].id); } }}
+            />
+            {inventoryLoading && <div style={{ color: accentGreen }}>Loading inventory...</div>}
+            {vendorSearch && (
+              <table className="trade-side-table">
                 <thead>
-                  <tr style={{ background: "#222" }}>
-                    <th style={{ color: accentGreen, padding: 7, fontSize: 15 }}>Name</th>
-                    <th style={{ color: accentGreen, padding: 7, fontSize: 15 }}>Cond.</th>
-                    <th style={{ color: accentGreen, padding: 7, fontSize: 15 }}>Value</th>
-                    <th style={{ color: accentGreen, padding: 7, fontSize: 15 }}></th>
+                  <tr>
+                    <th>Name</th>
+                    <th>Set/Product</th>
+                    <th>#/Qty</th>
+                    <th>Market Value</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {trade.vendor.cards.map(card => (
-                    <tr key={card.id}>
-                      <td style={{ color: "#fff", padding: 7, fontSize: 16 }}>{card.cardName}</td>
-                      <td style={{ color: "#fff", padding: 7, fontSize: 16 }}>{card.condition}</td>
-                      <td style={{ color: accentGreen, padding: 7, fontSize: 16 }}>${Number(card.value).toFixed(2)}</td>
-                      <td style={{ padding: 7 }}>
+                  {vendorSearchResults.length === 0 && (
+                    <tr>
+                      <td colSpan={5} style={{ color: "#aaa", textAlign: "center" }}>No results found.</td>
+                    </tr>
+                  )}
+                  {vendorSearchResults.map(item => (
+                    <tr key={item.id}>
+                      <td className={item.type === "sealed" ? "sealed-name" : "item-name"}>
+                        {item.cardName || item.productName}
+                      </td>
+                      <td className={item.type === "sealed" ? "sealed-details" : "item-details"}>
+                        {item.setName || item.productType}
+                      </td>
+                      <td>{item.cardNumber || item.quantity || ""}</td>
+                      <td className="item-value">
+                        ${Number(item.marketValue || 0).toFixed(2)}
+                      </td>
+                      <td>
                         <button
-                          onClick={() => removeVendorCard(card.id)}
-                          style={{
-                            background: "#a22",
-                            color: "#fff",
-                            border: "none",
-                            borderRadius: 5,
-                            fontWeight: 700,
-                            cursor: "pointer",
-                            padding: "3px 12px"
-                          }}
+                          className="trade-side-btn"
+                          style={{ padding: "3px 10px", fontSize: 14, marginLeft: 0 }}
+                          onClick={() => addVendorFromInventory(item.id)}
                         >
-                          ❌
+                          +
                         </button>
                       </td>
                     </tr>
@@ -576,676 +508,528 @@ export default function TradeTab() {
               </table>
             )}
           </div>
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ color: "#fff", fontWeight: 600, fontSize: 17 }}>
+          <div style={{ marginTop: 12 }}>
+            <table className="trade-side-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Set/Product</th>
+                  <th>#/Qty</th>
+                  <th>Value</th>
+                  <th>Cond.</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {trade.vendor.cards.map((card) => (
+                  <tr key={card.id}>
+                    <td className="item-name">{card.cardName}</td>
+                    <td className="item-details">{card.setName || ""}</td>
+                    <td>{card.cardNumber || ""}</td>
+                    <td className="item-value">${Number(card.value || 0).toFixed(2)}</td>
+                    <td className="item-cond">{card.condition}</td>
+                    <td>
+                      <button
+                        className="item-remove-btn"
+                        onClick={() => removeVendorCard(card.id)}
+                      >
+                        ❌
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {trade.vendor.sealed.map((prod) => (
+                  <tr key={prod.id}>
+                    <td className="sealed-name">{prod.productName}</td>
+                    <td className="sealed-details">{prod.productType || ""}</td>
+                    <td>{prod.quantity || ""}</td>
+                    <td className="item-value">${Number(prod.value || 0).toFixed(2)}</td>
+                    <td className="item-cond">{prod.condition}</td>
+                    <td>
+                      <button
+                        className="item-remove-btn"
+                        onClick={() => removeVendorSealed(prod.id)}
+                      >
+                        ❌
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="trade-side-total">
+            Total: ${vendorTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+          <div>
+            <label className="trade-cash-label">
               Cash:
               <input
                 type="number"
                 min="0"
-                step="1"
+                className="trade-cash-input"
                 value={trade.vendor.cash}
                 onChange={e => setVendorCash(e.target.value)}
-                style={{
-                  marginLeft: 8,
-                  width: 85,
-                  padding: 8,
-                  background: "#181b1e",
-                  color: "#fff",
-                  border: "1px solid #444",
-                  borderRadius: 6,
-                  fontSize: 17
-                }}
-              />{" "}
-              <span style={{ color: "#fff" }}>$</span>
+              />
               <select
+                className="trade-cash-select"
                 value={trade.vendor.cashType}
                 onChange={e => setVendorCashType(e.target.value)}
-                style={{
-                  marginLeft: 8,
-                  padding: 7,
-                  borderRadius: 6,
-                  background: "#151c16",
-                  color: "#fff"
-                }}
               >
                 <option value="cash">Cash</option>
-                <option value="card">Card/Other</option>
+                <option value="venmo">Venmo</option>
+                <option value="paypal">PayPal</option>
+                <option value="other">Other</option>
               </select>
             </label>
-          </div>
-          <div style={{ fontWeight: 700, color: accentGreen, fontSize: 18 }}>
-            Total: ${vendorTotal.toFixed(2)}
+            <span style={{ color: "#ccc", fontSize: 13, marginLeft: 10 }}>
+              (Cash on hand: ${cashOnHand.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+            </span>
           </div>
         </div>
 
         {/* -------- Customer Side -------- */}
-        <div style={{
-          background: "#161b1b",
-          padding: 30,
-          borderRadius: 18,
-          minWidth: 560,
-          maxWidth: 720,
-          flex: "1 1 600px",
-          border: `2.5px solid ${accentGreen}33`
-        }}>
-          <div style={{ fontWeight: 700, color: accentGreen, fontSize: 20, marginBottom: 8 }}>Customer Side</div>
-          <div style={{ marginBottom: 14 }}>
+        <div className="trade-side vendor-side-box">
+          <div className="trade-side-title">Customer Side</div>
+          <div className="trade-side-controls">
             <button
-              onClick={() => setShowCustomerLookup(true)}
-              style={{
-                padding: "9px 16px",
-                background: "#1a3",
-                color: "#fff",
-                border: "none",
-                borderRadius: 7,
-                fontWeight: 700,
-                marginRight: 3,
-                cursor: "pointer",
-                fontSize: 16
-              }}
-            >
-              Add Card
-            </button>
-            <button
+              className="trade-side-btn"
               onClick={() => setShowCustomerManual(true)}
-              style={{
-                padding: "9px 16px",
-                background: "#1a3",
-                color: "#fff",
-                border: "none",
-                borderRadius: 7,
-                fontWeight: 700,
-                marginLeft: 8,
-                cursor: "pointer",
-                fontSize: 16
-              }}
             >
-              Add Manual Card
+              Add Card (Manual)
+            </button>
+            <button
+              className="trade-side-btn sealed"
+              onClick={() => setShowCustomerSealed(true)}
+            >
+              Add Sealed Product
+            </button>
+            <button
+              className="trade-side-btn"
+              style={{ background: "#198c47" }}
+              onClick={() => setShowCustomerLookup(true)}
+            >
+              Lookup Pokémon Card
             </button>
           </div>
-          {showCustomerManual && (
-            <div style={{ marginBottom: 14, background: "#233", borderRadius: 7, padding: 10 }}>
-              <input
-                placeholder="Item Name"
-                value={manualCustomer.name}
-                onChange={e => setManualCustomer(m => ({ ...m, name: e.target.value }))}
-                style={{
-                  marginRight: 8,
-                  padding: 7,
-                  borderRadius: 5,
-                  border: "1px solid #444",
-                  background: "#181b1e",
-                  color: "#fff",
-                  width: 140
-                }}
-              />
-              <select
-                value={manualCustomer.condition}
-                onChange={e => setManualCustomer(m => ({ ...m, condition: e.target.value }))}
-                style={{
-                  marginRight: 8,
-                  padding: 7,
-                  borderRadius: 5,
-                  background: "#181b1e",
-                  color: "#fff",
-                  border: "1px solid #444"
-                }}
-              >
-                <option value="NM">NM</option>
-                <option value="LP">LP</option>
-                <option value="MP">MP</option>
-                <option value="HP">HP</option>
-                <option value="DMG">DMG</option>
-              </select>
-              <input
-                placeholder="Value"
-                type="number"
-                min="0"
-                value={manualCustomer.value}
-                onChange={e => setManualCustomer(m => ({ ...m, value: e.target.value }))}
-                style={{
-                  marginRight: 8,
-                  padding: 7,
-                  borderRadius: 5,
-                  border: "1px solid #444",
-                  background: "#181b1e",
-                  color: "#fff",
-                  width: 95
-                }}
-              />
-              <button
-                onClick={addManualCustomerCard}
-                style={{
-                  background: accentGreen,
-                  color: "#181b1e",
-                  padding: "7px 16px",
-                  border: "none",
-                  borderRadius: 6,
-                  fontWeight: 700,
-                  cursor: "pointer"
-                }}
-                disabled={!manualCustomer.name || !manualCustomer.value}
-              >
-                Add
-              </button>
-              <button
-                onClick={() => setShowCustomerManual(false)}
-                style={{
-                  marginLeft: 8,
-                  background: "#23262a",
-                  color: "#fff",
-                  padding: "7px 16px",
-                  border: `1px solid #444`,
-                  borderRadius: 6,
-                  fontWeight: 700,
-                  cursor: "pointer"
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-          <div style={{ fontWeight: 600, color: "#fff", margin: "12px 0 7px" }}>
-            Cards ({trade.customer.cards.length}):
-          </div>
-          <div style={{ marginBottom: 18, minHeight: 80 }}>
-            {trade.customer.cards.length === 0 ? (
-              <div style={{ color: "#ccc" }}>No cards yet.</div>
-            ) : (
-              <table style={{ width: "100%", background: "none" }}>
-                <thead>
-                  <tr style={{ background: "#222" }}>
-                    <th style={{ color: accentGreen, padding: 7, fontSize: 15 }}>Name</th>
-                    <th style={{ color: accentGreen, padding: 7, fontSize: 15 }}>Cond.</th>
-                    <th style={{ color: accentGreen, padding: 7, fontSize: 15 }}>Value</th>
-                    <th style={{ color: accentGreen, padding: 7, fontSize: 15 }}></th>
+          <div>
+            <table className="trade-side-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Set/Product</th>
+                  <th>#/Qty</th>
+                  <th>Value</th>
+                  <th>Cond.</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {trade.customer.cards.map((card) => (
+                  <tr key={card.id}>
+                    <td className="item-name">{card.cardName}</td>
+                    <td className="item-details">{card.setName || ""}</td>
+                    <td>{card.cardNumber || ""}</td>
+                    <td className="item-value">${Number(card.value || 0).toFixed(2)}</td>
+                    <td className="item-cond">{card.condition}</td>
+                    <td>
+                      <button
+                        className="item-remove-btn"
+                        onClick={() => removeCustomerCard(card.id)}
+                      >
+                        ❌
+                      </button>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {trade.customer.cards.map(card => (
-                    <tr key={card.id}>
-                      <td style={{ color: "#fff", padding: 7, fontSize: 16 }}>{card.cardName}</td>
-                      <td style={{ color: "#fff", padding: 7, fontSize: 16 }}>{card.condition || "NM"}</td>
-                      <td style={{ color: accentGreen, padding: 7, fontSize: 16 }}>${Number(card.value).toFixed(2)}</td>
-                      <td style={{ padding: 7 }}>
-                        <button
-                          onClick={() => removeCustomerCard(card.id)}
-                          style={{
-                            background: "#a22",
-                            color: "#fff",
-                            border: "none",
-                            borderRadius: 5,
-                            fontWeight: 700,
-                            cursor: "pointer",
-                            padding: "3px 12px"
-                          }}
-                        >
-                          ❌
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+                ))}
+                {trade.customer.sealed.map((prod) => (
+                  <tr key={prod.id}>
+                    <td className="sealed-name">{prod.productName}</td>
+                    <td className="sealed-details">{prod.productType || ""}</td>
+                    <td>{prod.quantity || ""}</td>
+                    <td className="item-value">${Number(prod.value || 0).toFixed(2)}</td>
+                    <td className="item-cond">{prod.condition}</td>
+                    <td>
+                      <button
+                        className="item-remove-btn"
+                        onClick={() => removeCustomerSealed(prod.id)}
+                      >
+                        ❌
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ color: "#fff", fontWeight: 600, fontSize: 17 }}>
+          <div className="trade-side-total">
+            Total: ${customerTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+          <div>
+            <label className="trade-cash-label">
               Cash:
               <input
                 type="number"
                 min="0"
-                step="1"
+                className="trade-cash-input"
                 value={trade.customer.cash}
                 onChange={e => setCustomerCash(e.target.value)}
-                style={{
-                  marginLeft: 8,
-                  width: 85,
-                  padding: 8,
-                  background: "#181b1e",
-                  color: "#fff",
-                  border: "1px solid #444",
-                  borderRadius: 6,
-                  fontSize: 17
-                }}
-              />{" "}
-              <span style={{ color: "#fff" }}>$</span>
+              />
               <select
+                className="trade-cash-select"
                 value={trade.customer.cashType}
                 onChange={e => setCustomerCashType(e.target.value)}
-                style={{
-                  marginLeft: 8,
-                  padding: 7,
-                  borderRadius: 6,
-                  background: "#151c16",
-                  color: "#fff"
-                }}
               >
                 <option value="cash">Cash</option>
-                <option value="card">Card/Other</option>
+                <option value="venmo">Venmo</option>
+                <option value="paypal">PayPal</option>
+                <option value="other">Other</option>
               </select>
             </label>
-          </div>
-          <div style={{ fontWeight: 700, color: accentGreen, fontSize: 18 }}>
-            Total: ${customerTotal.toFixed(2)}
           </div>
         </div>
       </div>
 
-      <div style={{ textAlign: "center", marginTop: 18 }}>
-        <button
-          onClick={() => setConfirmOpen(true)}
-          disabled={
-            trade.vendor.cards.length === 0 &&
-            trade.vendor.cash === 0 &&
-            trade.customer.cards.length === 0 &&
-            trade.customer.cash === 0
-          }
-          style={{
-            background: accentGreen,
-            color: "#181b1e",
-            border: "none",
-            borderRadius: 7,
-            fontWeight: 700,
-            padding: "13px 48px",
-            cursor: "pointer",
-            fontSize: 21,
-            marginRight: 12,
-            boxShadow: "0 1px 12px #00b84a30"
-          }}
-        >
-          Confirm Trade
-        </button>
-        <button
-          onClick={clearTrade}
-          style={{
-            background: "#a22",
-            color: "#fff",
-            border: "none",
-            borderRadius: 7,
-            fontWeight: 700,
-            padding: "12px 36px",
-            cursor: "pointer",
-            fontSize: 18,
-            marginLeft: 12
-          }}
-        >
-          Clear Trade
+      <div style={{ textAlign: "center", marginTop: 30 }}>
+        <button className="trade-modal-btn" onClick={() => setConfirmOpen(true)}>
+          Confirm & Log Trade
         </button>
       </div>
 
       {/* Confirm Modal */}
       {confirmOpen && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0, left: 0, width: "100vw", height: "100vh",
-            background: "rgba(0,0,0,.86)",
-            zIndex: 9000,
-            display: "flex", alignItems: "center", justifyContent: "center"
-          }}
-          onClick={() => setConfirmOpen(false)}
-        >
-          <div
-            style={{
-              background: "#171f18",
-              color: "#fff",
-              border: `2px solid ${accentGreen}`,
-              borderRadius: 14,
-              minWidth: 340,
-              maxWidth: 410,
-              padding: 38,
-              textAlign: "center"
-            }}
-            onClick={e => e.stopPropagation()}
-          >
-            <h3 style={{ color: accentGreen, margin: "0 0 10px", fontWeight: 900, fontSize: 23 }}>
-              Complete This Trade?
-            </h3>
-            <div style={{ fontSize: 16, marginBottom: 16 }}>
-              This will update your inventory and cash-on-hand.<br /><br />
-              Are you sure?
+        <div className="trade-modal-bg">
+          <div className="trade-modal">
+            <div className="trade-modal-title">Confirm Trade</div>
+            {confirmError && <div className="trade-modal-error">{confirmError}</div>}
+            <div>
+              <b>Vendor Total:</b> ${vendorTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}<br />
+              <b>Customer Total:</b> ${customerTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
-            {confirmError && (
-              <div style={{ color: "#ff3b43", marginBottom: 8, fontWeight: 600 }}>
-                {confirmError}
-              </div>
-            )}
-            <button
-              onClick={doTrade}
-              style={{
-                background: accentGreen,
-                color: "#181b1e",
-                border: "none",
-                borderRadius: 7,
-                fontWeight: 800,
-                padding: "11px 38px",
-                cursor: "pointer",
-                fontSize: 17,
-                marginRight: 12,
-                marginTop: 3
-              }}
-            >
-              Yes, Complete Trade
-            </button>
-            <button
-              onClick={() => setConfirmOpen(false)}
-              style={{
-                background: "#23262a",
-                color: "#fff",
-                padding: "11px 28px",
-                border: `1.5px solid #444`,
-                borderRadius: 7,
-                fontWeight: 700,
-                fontSize: 15,
-                cursor: "pointer",
-                marginLeft: 12,
-                marginTop: 3
-              }}
-            >
-              Cancel
-            </button>
+            <div style={{ marginTop: 18 }}>
+              <button className="trade-modal-btn" onClick={confirmTrade}>Confirm</button>
+              <button className="trade-modal-cancel-btn" onClick={() => setConfirmOpen(false)}>Cancel</button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Customer Card Lookup Modal */}
-      {showCustomerLookup && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0, left: 0, width: "100vw", height: "100vh",
-            background: "rgba(0,0,0,.86)",
-            zIndex: 9999,
-            display: "flex", alignItems: "center", justifyContent: "center"
-          }}
-          onClick={() => setShowCustomerLookup(false)}
-        >
-          <div
-            style={{
-              background: "#171f18",
-              color: "#fff",
-              border: `2px solid ${accentGreen}`,
-              borderRadius: 14,
-              minWidth: 390,
-              maxWidth: 650,
-              padding: 30,
-              boxShadow: "0 8px 44px #00b84a28"
-            }}
-            onClick={e => e.stopPropagation()}
-          >
-            <h3 style={{ color: accentGreen, margin: "0 0 10px", fontWeight: 900, fontSize: 20 }}>
-              Add Card from Lookup
-            </h3>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 13 }}>
-              <select
-                value={customerSearchType}
-                onChange={e => setCustomerSearchType(e.target.value)}
-                style={{ padding: 7, borderRadius: 5, background: "#181b1e", color: "#fff", border: "1px solid #444" }}
-              >
-                <option value="name">By Name</option>
-                <option value="setnum">By Set/#</option>
-              </select>
-              {customerSearchType === "name" ? (
-                <input
-                  placeholder="Card Name"
-                  value={customerLookupQuery}
-                  onChange={e => setCustomerLookupQuery(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === "Enter") lookupCustomerCards(1);
-                  }}
-                  style={{ padding: 7, borderRadius: 5, background: "#181b1e", color: "#fff", border: "1px solid #444", minWidth: 140 }}
-                />
-              ) : (
-                <>
-                  <select
-                    value={customerLookupSet}
-                    onChange={e => setCustomerLookupSet(e.target.value)}
-                    style={{ padding: 7, borderRadius: 5, background: "#181b1e", color: "#fff", border: "1px solid #444", minWidth: 120 }}
-                  >
-                    <option value="">Select Set</option>
-                    {setsLoading ? <option>Loading...</option> :
-                      sets.map(s => (
-                        <option value={s.id} key={s.id}>{s.name}</option>
-                      ))}
-                  </select>
-                  <input
-                    placeholder="Card #"
-                    value={customerLookupNumber}
-                    onChange={e => setCustomerLookupNumber(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === "Enter") lookupCustomerCards(1);
-                    }}
-                    style={{ padding: 7, borderRadius: 5, background: "#181b1e", color: "#fff", border: "1px solid #444", minWidth: 65 }}
-                  />
-                </>
-              )}
-              <select
-                value={customerLookupCondition}
-                onChange={e => setCustomerLookupCondition(e.target.value)}
-                style={{ padding: 7, borderRadius: 5, background: "#181b1e", color: "#fff", border: "1px solid #444" }}
-              >
-                <option value="NM">NM</option>
-                <option value="LP">LP</option>
-                <option value="MP">MP</option>
-                <option value="HP">HP</option>
-                <option value="DMG">DMG</option>
-              </select>
-              <button
-                onClick={() => lookupCustomerCards(1)}
-                disabled={customerSearchType === "name"
-                  ? !customerLookupQuery
-                  : (!customerLookupSet || !customerLookupNumber)}
-                style={{
-                  background: accentGreen,
-                  color: "#181b1e",
-                  border: "none",
-                  borderRadius: 7,
-                  fontWeight: 700,
-                  padding: "7px 18px",
-                  fontSize: 15,
-                  cursor: "pointer"
-                }}
-              >
-                Search
-              </button>
-            </div>
-            {/* --- Pagination Top --- */}
-            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", margin: "4px 0", gap: 16 }}>
-              <button
-                onClick={() => lookupCustomerCards(Math.max(1, customerLookupPage - 1))}
-                disabled={customerLookupPage === 1 || customerLookupLoading}
-                style={{
-                  background: "#23262a",
-                  color: "#fff",
-                  border: "1px solid #444",
-                  borderRadius: 6,
-                  padding: "6px 16px",
-                  fontWeight: 700,
-                  fontSize: 15,
-                  cursor: customerLookupPage === 1 ? "not-allowed" : "pointer",
-                  opacity: customerLookupPage === 1 ? 0.6 : 1
-                }}
-              >
-                &#8592; Prev
-              </button>
-              <span style={{ color: accentGreen, fontWeight: 700, fontSize: 16 }}>
-                Page {customerLookupPage}{customerLookupTotalResults && customerLookupResults.length > 0 ? ` of ${Math.ceil(customerLookupTotalResults / 8)}` : ""}
-              </span>
-              <button
-                onClick={() => lookupCustomerCards(customerLookupPage + 1)}
-                disabled={customerLookupLoading || customerLookupResults.length < 8}
-                style={{
-                  background: "#23262a",
-                  color: "#fff",
-                  border: "1px solid #444",
-                  borderRadius: 6,
-                  padding: "6px 16px",
-                  fontWeight: 700,
-                  fontSize: 15,
-                  cursor: customerLookupResults.length < 8 ? "not-allowed" : "pointer",
-                  opacity: customerLookupResults.length < 8 ? 0.6 : 1
-                }}
-              >
-                Next &#8594;
-              </button>
-            </div>
-            {customerLookupLoading ? (
-              <div style={{ color: accentGreen, fontWeight: 700, padding: 28, textAlign: "center" }}>
-                Searching...
-              </div>
-            ) : (
-              <>
-                {customerLookupResults.length === 0 ? (
-                  <div style={{ color: "#ccc", padding: 12, fontStyle: "italic" }}>
-                    No results yet.
-                  </div>
-                ) : (
-                  <>
-                    {/* Results grid with card image and set icon */}
-                    <div style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
-                      gap: 14,
-                      marginTop: 10,
-                      marginBottom: 10
-                    }}>
-                      {customerLookupResults.map(card => (
-                        <div
-                          key={card.id}
-                          style={{
-                            background: "#23272b",
-                            borderRadius: 10,
-                            padding: 10,
-                            boxShadow: "0 1px 4px #00b84a13",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 12
-                          }}
-                        >
-                          {/* Card Image */}
-                          <img
-                            src={card.images?.small}
-                            alt={card.name}
-                            style={{
-                              width: 56,
-                              height: 78,
-                              objectFit: "cover",
-                              borderRadius: 6,
-                              border: "1px solid #333",
-                              background: "#232"
-                            }}
-                          />
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            {/* Name and set with set icon */}
-                            <div style={{ fontWeight: 700, color: accentGreen, fontSize: 15, display: "flex", alignItems: "center", gap: 7 }}>
-                              {card.name}
-                              {card.set?.images?.symbol && (
-                                <img
-                                  src={card.set.images.symbol}
-                                  alt="Set"
-                                  style={{
-                                    width: 22,
-                                    height: 22,
-                                    background: "#fff",
-                                    borderRadius: 5,
-                                    border: "1px solid #ddd"
-                                  }}
-                                />
-                              )}
-                            </div>
-                            <div style={{ color: "#aaa", fontSize: 13, margin: "2px 0" }}>
-                              Set: {card.set?.name} &nbsp; #{card.number}
-                            </div>
-                            <div style={{ color: "#7ff", fontSize: 14, marginBottom: 4 }}>
-                              Market: $
-                              {card.tcgplayer?.prices?.normal?.market?.toFixed(2) ||
-                                card.tcgplayer?.prices?.holofoil?.market?.toFixed(2) ||
-                                card.tcgplayer?.prices?.reverseHolofoil?.market?.toFixed(2) ||
-                                "?.??"}
-                            </div>
-                            <button
-                              style={{
-                                background: accentGreen,
-                                color: "#181b1e",
-                                border: "none",
-                                borderRadius: 6,
-                                fontWeight: 700,
-                                padding: "6px 14px",
-                                fontSize: 14,
-                                cursor: "pointer"
-                              }}
-                              onClick={() => addCustomerCard(card)}
-                            >
-                              Add to Trade
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    {/* Pagination bottom */}
-                    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", margin: "8px 0 0 0", gap: 16 }}>
-                      <button
-                        onClick={() => lookupCustomerCards(Math.max(1, customerLookupPage - 1))}
-                        disabled={customerLookupPage === 1 || customerLookupLoading}
-                        style={{
-                          background: "#23262a",
-                          color: "#fff",
-                          border: "1px solid #444",
-                          borderRadius: 6,
-                          padding: "6px 16px",
-                          fontWeight: 700,
-                          fontSize: 15,
-                          cursor: customerLookupPage === 1 ? "not-allowed" : "pointer",
-                          opacity: customerLookupPage === 1 ? 0.6 : 1
-                        }}
-                      >
-                        &#8592; Prev
-                      </button>
-                      <span style={{ color: accentGreen, fontWeight: 700, fontSize: 16 }}>
-                        Page {customerLookupPage}{customerLookupTotalResults && customerLookupResults.length > 0 ? ` of ${Math.ceil(customerLookupTotalResults / 8)}` : ""}
-                      </span>
-                      <button
-                        onClick={() => lookupCustomerCards(customerLookupPage + 1)}
-                        disabled={customerLookupLoading || customerLookupResults.length < 8}
-                        style={{
-                          background: "#23262a",
-                          color: "#fff",
-                          border: "1px solid #444",
-                          borderRadius: 6,
-                          padding: "6px 16px",
-                          fontWeight: 700,
-                          fontSize: 15,
-                          cursor: customerLookupResults.length < 8 ? "not-allowed" : "pointer",
-                          opacity: customerLookupResults.length < 8 ? 0.6 : 1
-                        }}
-                      >
-                        Next &#8594;
-                      </button>
-                    </div>
-                  </>
-                )}
-              </>
-            )}
-      <button
-              onClick={() => setShowCustomerLookup(false)}
-              style={{
-                marginTop: 18,
-                background: "#23262a",
-                color: "#fff",
-                padding: "7px 16px",
-                border: `1.5px solid #444`,
-                borderRadius: 6,
-                fontWeight: 700,
-                fontSize: 15,
-                cursor: "pointer"
-              }}
+      {/* Vendor Manual Modal */}
+      {showVendorManual && (
+        <div className="trade-modal-bg">
+          <div className="trade-modal">
+            <div className="trade-modal-title">Add Card (Manual)</div>
+            <input
+              type="text"
+              placeholder="Card Name"
+              value={manualVendor.name}
+              onChange={e => setManualVendor({ ...manualVendor, name: e.target.value })}
+              style={{ width: "90%", padding: 9, marginBottom: 12 }}
+            />
+            <input
+              type="number"
+              placeholder="Market Value"
+              value={manualVendor.value}
+              onChange={e => setManualVendor({ ...manualVendor, value: e.target.value })}
+              style={{ width: "90%", padding: 9, marginBottom: 12 }}
+            />
+            <select
+              value={manualVendor.condition}
+              onChange={e => setManualVendor({ ...manualVendor, condition: e.target.value })}
+              style={{ width: "90%", padding: 9, marginBottom: 12 }}
             >
-              Close
-            </button>
+              <option value="NM">Near Mint (NM)</option>
+              <option value="LP">Light Play (LP)</option>
+              <option value="MP">Moderate Play (MP)</option>
+              <option value="HP">Heavy Play (HP)</option>
+              <option value="DMG">Damaged</option>
+            </select>
+            <button className="trade-modal-btn" onClick={addManualVendorCard}>Add</button>
+            <button className="trade-modal-cancel-btn" onClick={() => setShowVendorManual(false)}>Cancel</button>
           </div>
         </div>
       )}
+
+      {/* Vendor Sealed Modal */}
+      {showVendorSealed && (
+        <div className="trade-modal-bg">
+          <div className="trade-modal">
+            <div className="trade-modal-title">Add Sealed Product</div>
+            <input
+              type="text"
+              placeholder="Product Name"
+              value={manualVendorSealed.productName}
+              onChange={e => setManualVendorSealed({ ...manualVendorSealed, productName: e.target.value })}
+              style={{ width: "90%", padding: 9, marginBottom: 10 }}
+            />
+            <input
+              type="text"
+              placeholder="Set Name"
+              value={manualVendorSealed.setName}
+              onChange={e => setManualVendorSealed({ ...manualVendorSealed, setName: e.target.value })}
+              style={{ width: "90%", padding: 9, marginBottom: 10 }}
+            />
+            <select
+              value={manualVendorSealed.productType}
+              onChange={e => setManualVendorSealed({ ...manualVendorSealed, productType: e.target.value })}
+              style={{ width: "90%", padding: 9, marginBottom: 10 }}
+            >
+              <option>Booster Box</option>
+              <option>Booster Pack</option>
+              <option>ETB</option>
+              <option>Tin</option>
+              <option>Deck</option>
+              <option>Other</option>
+            </select>
+            <input
+              type="number"
+              placeholder="Quantity"
+              value={manualVendorSealed.quantity}
+              onChange={e => setManualVendorSealed({ ...manualVendorSealed, quantity: e.target.value })}
+              style={{ width: "90%", padding: 9, marginBottom: 10 }}
+            />
+            <input
+              type="number"
+              placeholder="Market Value"
+              value={manualVendorSealed.value}
+              onChange={e => setManualVendorSealed({ ...manualVendorSealed, value: e.target.value })}
+              style={{ width: "90%", padding: 9, marginBottom: 10 }}
+            />
+            <button className="trade-modal-btn" onClick={addManualVendorSealed}>Add</button>
+            <button className="trade-modal-cancel-btn" onClick={() => setShowVendorSealed(false)}>Cancel</button>
           </div>
-        );
-      }
+        </div>
+      )}
+
+      {/* Customer Manual Modal */}
+      {showCustomerManual && (
+        <div className="trade-modal-bg">
+          <div className="trade-modal">
+            <div className="trade-modal-title">Add Card (Manual)</div>
+            <input
+              type="text"
+              placeholder="Card Name"
+              value={manualCustomer.name}
+              onChange={e => setManualCustomer({ ...manualCustomer, name: e.target.value })}
+              style={{ width: "90%", padding: 9, marginBottom: 12 }}
+            />
+            <input
+              type="number"
+              placeholder="Market Value"
+              value={manualCustomer.value}
+              onChange={e => setManualCustomer({ ...manualCustomer, value: e.target.value })}
+              style={{ width: "90%", padding: 9, marginBottom: 12 }}
+            />
+            <select
+              value={manualCustomer.condition}
+              onChange={e => setManualCustomer({ ...manualCustomer, condition: e.target.value })}
+              style={{ width: "90%", padding: 9, marginBottom: 12 }}
+            >
+              <option value="NM">Near Mint (NM)</option>
+              <option value="LP">Light Play (LP)</option>
+              <option value="MP">Moderate Play (MP)</option>
+              <option value="HP">Heavy Play (HP)</option>
+              <option value="DMG">Damaged</option>
+            </select>
+            <button className="trade-modal-btn" onClick={addManualCustomerCard}>Add</button>
+            <button className="trade-modal-cancel-btn" onClick={() => setShowCustomerManual(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* Customer Sealed Modal */}
+      {showCustomerSealed && (
+        <div className="trade-modal-bg">
+          <div className="trade-modal">
+            <div className="trade-modal-title">Add Sealed Product</div>
+            <input
+              type="text"
+              placeholder="Product Name"
+              value={manualCustomerSealed.productName}
+              onChange={e => setManualCustomerSealed({ ...manualCustomerSealed, productName: e.target.value })}
+              style={{ width: "90%", padding: 9, marginBottom: 10 }}
+            />
+            <input
+              type="text"
+              placeholder="Set Name"
+              value={manualCustomerSealed.setName}
+              onChange={e => setManualCustomerSealed({ ...manualCustomerSealed, setName: e.target.value })}
+              style={{ width: "90%", padding: 9, marginBottom: 10 }}
+            />
+            <select
+              value={manualCustomerSealed.productType}
+              onChange={e => setManualCustomerSealed({ ...manualCustomerSealed, productType: e.target.value })}
+              style={{ width: "90%", padding: 9, marginBottom: 10 }}
+            >
+              <option>Booster Box</option>
+              <option>Booster Pack</option>
+              <option>ETB</option>
+              <option>Tin</option>
+              <option>Deck</option>
+              <option>Other</option>
+            </select>
+            <input
+              type="number"
+              placeholder="Quantity"
+              value={manualCustomerSealed.quantity}
+              onChange={e => setManualCustomerSealed({ ...manualCustomerSealed, quantity: e.target.value })}
+              style={{ width: "90%", padding: 9, marginBottom: 10 }}
+            />
+            <input
+              type="number"
+              placeholder="Market Value"
+              value={manualCustomerSealed.value}
+              onChange={e => setManualCustomerSealed({ ...manualCustomerSealed, value: e.target.value })}
+              style={{ width: "90%", padding: 9, marginBottom: 10 }}
+            />
+            <button className="trade-modal-btn" onClick={addManualCustomerSealed}>Add</button>
+            <button className="trade-modal-cancel-btn" onClick={() => setShowCustomerSealed(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* Customer Lookup Modal */}
+      {showCustomerLookup && (
+        <div className="trade-lookup-modal-bg">
+          <div className="trade-lookup-modal">
+            <div className="trade-modal-title">Lookup Pokémon Card</div>
+            <select
+              value={customerSearchType}
+              onChange={e => setCustomerSearchType(e.target.value)}
+              style={{ width: "93%", padding: 9, marginBottom: 10 }}
+            >
+              <option value="name">Search by Name</option>
+              <option value="number">Search by Set & Number</option>
+            </select>
+            {customerSearchType === "name" ? (
+              <input
+                placeholder="Card Name"
+                value={customerLookupQuery}
+                onChange={e => setCustomerLookupQuery(e.target.value)}
+                style={{ width: "93%", padding: 9, marginBottom: 10 }}
+                onKeyDown={e => {
+                  if (e.key === "Enter") lookupCustomerCards(1);
+                }}
+              />
+            ) : setsLoading ? (
+              <span style={{ color: accentGreen }}>Loading sets...</span>
+            ) : (
+              <>
+                <select
+                  value={customerLookupSet}
+                  onChange={e => setCustomerLookupSet(e.target.value)}
+                  style={{ width: "60%", padding: 9, marginBottom: 10 }}
+                >
+                  <option value="">Select Set</option>
+                  {sets.map(set => (
+                    <option key={set.id} value={set.id}>
+                      {set.name} [{set.id}]
+                    </option>
+                  ))}
+                </select>
+                <input
+                  placeholder="Card Number"
+                  value={customerLookupNumber}
+                  onChange={e => setCustomerLookupNumber(e.target.value)}
+                  style={{ width: "35%", padding: 9, marginBottom: 10, marginLeft: 6 }}
+                />
+              </>
+            )}
+            <select
+              value={customerLookupCondition}
+              onChange={e => setCustomerLookupCondition(e.target.value)}
+              style={{ width: "93%", padding: 9, marginBottom: 10 }}
+            >
+              <option value="NM">Near Mint (NM)</option>
+              <option value="LP">Light Play (LP)</option>
+              <option value="MP">Moderate Play (MP)</option>
+              <option value="HP">Heavy Play (HP)</option>
+              <option value="DMG">Damaged</option>
+            </select>
+            <button
+              className="trade-modal-btn"
+              onClick={() => lookupCustomerCards(1)}
+              disabled={customerLookupLoading}
+            >
+              Lookup
+            </button>
+            <button
+              className="trade-modal-cancel-btn"
+              onClick={() => setShowCustomerLookup(false)}
+            >
+              Cancel
+            </button>
+            {customerLookupLoading && (
+              <div style={{ color: accentGreen, marginTop: 10 }}>Loading...</div>
+            )}
+            <div style={{ marginTop: 12 }}>
+              {customerLookupResults.length > 0 && (
+                <table className="trade-side-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Set</th>
+                      <th>#</th>
+                      <th>Value</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {customerLookupResults.map(card => (
+                      <tr key={card.id}>
+                        <td>{card.name}</td>
+                        <td>{card.set?.name}</td>
+                        <td>{card.number}</td>
+                        <td>
+                          $
+                          {(card.tcgplayer?.prices?.normal?.market ??
+                            card.tcgplayer?.prices?.holofoil?.market ??
+                            card.tcgplayer?.prices?.reverseHolofoil?.market ??
+                            0
+                          ).toFixed(2)}
+                        </td>
+                        <td>
+                          <button
+                            className="trade-side-btn"
+                            style={{ padding: "3px 10px", fontSize: 14, marginLeft: 0 }}
+                            onClick={() => addCustomerCard(card)}
+                          >
+                            +
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {customerLookupResults.length === 0 && !customerLookupLoading && (
+                <div style={{ color: "#aaa", marginTop: 12 }}>No cards found.</div>
+              )}
+            </div>
+            {customerLookupTotalResults > 8 && (
+              <div style={{ textAlign: "center", marginTop: 12 }}>
+                <button
+                  className="trade-side-btn"
+                  disabled={customerLookupPage === 1}
+                  onClick={() => lookupCustomerCards(customerLookupPage - 1)}
+                >
+                  Prev
+                </button>
+                <span style={{ color: "#fff", fontWeight: "bold", margin: "0 10px" }}>
+                  Page {customerLookupPage}
+                </span>
+                <button
+                  className="trade-side-btn"
+                  disabled={customerLookupResults.length < 8}
+                  onClick={() => lookupCustomerCards(customerLookupPage + 1)}
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

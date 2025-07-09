@@ -1,2 +1,121 @@
-main {
+body {
+  margin: 0;
+  font-family: 'Inter', Arial, Helvetica, sans-serif;
+  background: #111314;
+}
+
+.app-bg {
+  min-height: 100vh;
+  min-width: 100vw;
+  color: #fff;
+  background-image: url("/pokemon-bg.png");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  position: relative;
+}
+
+.bg-overlay {
+  min-height: 100vh;
+  background: rgba(17,19,20,0.91); /* same overlay for readability */
+  width: 100vw;
+}
+
+.header {
+  padding: 24px 0 12px 0;
+  text-align: center;
+  position: relative;
+}
+
+.header-logo {
+  width: 250px;
+  margin-bottom: 8px;
+}
+
+.header-title {
+  font-weight: 800;
+  font-size: 32px;
+  letter-spacing: .5px;
+  color: #00b84a;
+  margin-top: 5px;
+}
+
+.logout-btn {
+  position: absolute;
+  top: 30px;
+  right: 38px;
+  background: #222;
+  color: #00b84a;
+  border: none;
+  border-radius: 7px;
+  padding: 7px 18px;
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.tabs {
+  display: flex;
+  justify-content: center;
+  gap: 30px;
+  margin: 30px 0 24px 0;
+}
+
+.tab-btn {
+  background: #181b1e;
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  padding: 8px 24px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 18px;
+  transition: background .18s, color .18s;
+}
+
+.tab-btn.active {
+  background: #00b84a;
+  color: #181b1e;
+}
+
+.dashboard-card,
+.tab-content {
+  background: #181b1e;
+  border-radius: 14px;
+  margin: 0 auto;
+  margin-bottom: 28px;
+  max-width: 1200px;
+  box-shadow: 0 2px 12px #121b1277;
+  padding: 32px;
+}
+
+.tab-content {
+  min-height: 260px;
+  margin-bottom: 40px;
+  padding: 24px;
+}
+
+.app-bg {
+  transition: background-image 0.2s linear, background-color 0.4s, color 0.2s;
+  position: relative;
+}
+.app-bg.fade-bg {
+  opacity: 0;
+  transition: opacity 0.35s;
+}
+.app-bg.show-bg {
+  opacity: 1;
+  transition: opacity 0.5s;
+}
+
+.login-bg {
+  min-height: 100vh;
+  background-image: url("/login-bg.png"); /* Use your file name */
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }

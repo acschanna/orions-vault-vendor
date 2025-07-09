@@ -1,0 +1,226 @@
+.card-lookup-root {
+  margin: 0 auto;
+  max-width: 980px;
+  background: #181b1e;
+  border-radius: 16px;
+  padding: 28px;
+  min-height: 300px;
+  font-family: 'Inter', Arial, Helvetica, sans-serif;
+}
+
+.card-lookup-title {
+  color: #00b84a;
+  margin-top: 0;
+  font-weight: 700;
+}
+
+.card-lookup-controls {
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.card-lookup-select,
+.card-lookup-input {
+  margin-right: 12px;
+  padding: 7px;
+  border-radius: 4px;
+  border: 1px solid #444;
+  background: #181b1e;
+  color: #fff;
+  min-width: 128px;
+  font-family: 'Inter', Arial, Helvetica, sans-serif;
+}
+
+.card-lookup-button {
+  background: #00b84a;
+  color: #121314;
+  padding: 8px 18px;
+  border: none;
+  border-radius: 7px;
+  font-weight: 700;
+  font-family: 'Inter', Arial, Helvetica, sans-serif;
+  cursor: pointer;
+  font-size: 17px;
+  margin-left: 10px;
+  transition: background .15s;
+}
+
+.card-lookup-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin-top: 15px;
+  margin-bottom: 10px;
+}
+
+.card-lookup-card {
+  background: #181b1e;
+  border: 1.5px solid #232;
+  border-radius: 10px;
+  padding: 12px;
+  box-shadow: 0 1px 5px #121b1277;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.card-lookup-card-image {
+  width: 90px;
+  margin-bottom: 8px;
+  border-radius: 5px;
+  background: #223;
+}
+
+.card-lookup-card-name {
+  font-weight: 600;
+  font-size: 15px;
+  text-align: center;
+  color: #fff;
+}
+
+.card-lookup-card-set {
+  font-size: 13px;
+  color: #00b84a;
+  margin: 2px 0;
+}
+
+.card-lookup-card-number {
+  font-size: 13px;
+  color: #bfffd7;
+}
+
+.card-lookup-card-viewbtn {
+  margin-top: 8px;
+  background: #00b84a;
+  color: #181b1e;
+  padding: 4px 13px;
+  border: none;
+  border-radius: 6px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.card-lookup-modal-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(10,25,12,0.96);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-lookup-modal {
+  background: #181b1e;
+  border-radius: 14px;
+  box-shadow: 0 8px 50px #00b84a13;
+  padding: 32px;
+  min-width: 340px;
+  max-width: 420px;
+  position: relative;
+  color: #fff;
+  border: 1.5px solid #00b84a;
+}
+
+.card-lookup-modal-image {
+  width: 88%;
+  max-width: 260px;
+  border-radius: 12px;
+  background: #161b22;
+  margin-bottom: 14px;
+  box-shadow: 0 4px 24px #00b84a11;
+}
+
+.card-lookup-modal-title {
+  font-weight: 700;
+  font-size: 22px;
+  margin-bottom: 4px;
+  text-align: center;
+  color: #fff;
+}
+
+.card-lookup-modal-set {
+  text-align: center;
+  color: #00b84a;
+  margin-bottom: 8px;
+}
+
+.card-lookup-modal-rarity {
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.card-lookup-modal-price {
+  text-align: center;
+  margin-bottom: 8px;
+  color: #00b84a;
+}
+
+.card-lookup-modal-btns {
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.card-lookup-add-inv,
+.card-lookup-add-trade {
+  background: #00b84a;
+  color: #181b1e;
+  padding: 8px 20px;
+  border: none;
+  border-radius: 7px;
+  font-weight: 700;
+  font-family: 'Inter', Arial, Helvetica, sans-serif;
+  cursor: pointer;
+  font-size: 17px;
+  margin-right: 12px;
+}
+
+.card-lookup-add-trade {
+  background: #198c47;
+  color: #fff;
+}
+
+.card-lookup-cancel-btn {
+  background: #23262a;
+  color: #fff;
+  padding: 9px 22px;
+  border: 1.5px solid #444;
+  border-radius: 7px;
+  font-weight: 700;
+  font-size: 16px;
+  cursor: pointer;
+  font-family: 'Inter', Arial, Helvetica, sans-serif;
+}
+
+.card-lookup-modal-fields {
+  background: #223;
+  padding: 12px;
+  border-radius: 7px;
+  margin-bottom: 10px;
+}
+
+.card-lookup-pagination {
+  text-align: center;
+  margin-top: 8px;
+}
+
+.card-lookup-pagination-btn {
+  margin: 0 8px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid #444;
+  background: #181b1e;
+  color: #fff;
+  cursor: pointer;
+}
+
+.card-lookup-pagination-btn:disabled {
+  background: #1a1f1b;
+  color: #444;
+  cursor: not-allowed;
+}
