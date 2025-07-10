@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useContext } from "react";
 import { useUser } from "./App";
 import { db } from "./firebase";
 import {
@@ -6,11 +6,11 @@ import {
   doc,
   getDocs,
   getDoc,
-  updateDoc,
   setDoc,
   addDoc,
   deleteDoc,
 } from "firebase/firestore";
+import { ShowContext } from "./ShowContext";
 import "./TradeTab.css";
 
 const accentGreen = "#00b84a";
@@ -19,6 +19,9 @@ const API_KEY = 'd49129a9-8f4c-4130-968a-cd47501df765';
 export default function TradeTab() {
   const user = useUser();
   const uid = user?.uid;
+
+  // Import showActive from ShowContext
+  const { showActive } = useContext(ShowContext);
 
   // Trade state
   const [trade, setTrade] = useState({
@@ -426,54 +429,48 @@ export default function TradeTab() {
       return;
     }
 
-    // Save to Firestore trade history
+    // ---- Save to Firestore trade history, INCLUDING showId if showActive ----
     const tradeRecord = {
       ...trade,
       date: new Date().toISOString(),
       vendorEmail: user.email,
       valueVendor: totalVendor,
-      valueCustomer: totalCustomer
+      valueCustomer: totalCustomer,
+      showId: showActive?.id || null, // <-- attaches current show if any!
+      showName: showActive?.showName || null,
     };
     const historyRef = collection(db, "users", uid, "tradeHistory");
     await setDoc(doc(historyRef), tradeRecord);
 
-    // 1. Remove vendor inventory items that are part of the trade
+    // [Your normal trade processing below, unchanged]
     for (let c of trade.vendor.cards) {
       if (c.origin === "inventory" && c.id) {
-        try {
-          await deleteDoc(doc(db, "users", uid, "inventory", c.id));
-        } catch {}
+        try { await deleteDoc(doc(db, "users", uid, "inventory", c.id)); } catch {}
       }
     }
     for (let c of trade.vendor.sealed) {
       if (c.origin === "inventory" && c.id) {
-        try {
-          await deleteDoc(doc(db, "users", uid, "inventory", c.id));
-        } catch {}
+        try { await deleteDoc(doc(db, "users", uid, "inventory", c.id)); } catch {}
       }
     }
 
     try {
-      // 1. Calculate total acquisition cost paid by vendor (cards, sealed, vendor cash, minus customer cash)
+      // --- Calculate acquisition costs (unchanged logic) ---
       const totalVendorAcqCost =
         trade.vendor.cards.reduce((a, c) => a + Number(c.acquisitionCost || c.value || 0), 0) +
         trade.vendor.sealed.reduce((a, c) => a + Number(c.acquisitionCost || c.value || 0), 0) +
         Number(trade.vendor.cash || 0) -
         Number(trade.customer.cash || 0);
 
-      // 2. Calculate total market value of items being received (customer side, cards & sealed)
       const totalCustomerMarketValue =
         trade.customer.cards.reduce((a, c) => a + Number(c.value || 0), 0) +
         trade.customer.sealed.reduce((a, c) => a + Number(c.value || 0), 0);
 
-      // Avoid divide by zero
       const safeTotalCustomerMarketValue = totalCustomerMarketValue > 0 ? totalCustomerMarketValue : 1;
 
-      // 3. Assign new acq. cost proportionally for each card
       for (let card of trade.customer.cards) {
         const percentOfTrade = Number(card.value || 0) / safeTotalCustomerMarketValue;
         const acqCost = percentOfTrade * totalVendorAcqCost;
-
         await addDoc(collection(db, "users", uid, "inventory"), {
           type: "card",
           setName: card.setName,
@@ -482,17 +479,14 @@ export default function TradeTab() {
           tcgPlayerId: card.tcgPlayerId,
           images: card.images || undefined,
           marketValue: card.value,
-          acquisitionCost: acqCost, // THIS IS THE SPLIT VALUE!
+          acquisitionCost: acqCost,
           condition: card.condition,
           dateAdded: new Date().toISOString(),
         });
       }
-
-      // 4. Same for sealed
       for (let prod of trade.customer.sealed) {
         const percentOfTrade = Number(prod.value || 0) / safeTotalCustomerMarketValue;
         const acqCost = percentOfTrade * totalVendorAcqCost;
-
         await addDoc(collection(db, "users", uid, "inventory"), {
           type: "sealed",
           productName: prod.productName,
@@ -509,8 +503,6 @@ export default function TradeTab() {
       console.error("Error adding traded-in inventory:", err);
     }
 
-
-    // Subtract/add cash if applicable
     if (trade.vendor.cash > 0 || trade.customer.cash > 0) {
       const cashAfter = cashOnHand - Number(trade.vendor.cash || 0) + Number(trade.customer.cash || 0);
       await setDoc(doc(db, "users", uid), { cashOnHand: cashAfter }, { merge: true });

@@ -12,16 +12,17 @@ import {
   getDoc,
   setDoc,
   getDocs,
-  updateDoc,
   addDoc,
   query,
   orderBy,
-  where,
+  updateDoc
 } from "firebase/firestore";
 import TradeTab from "./TradeTab.jsx";
 import Inventory from "./Inventory.jsx";
 import CardLookup from "./CardLookup.jsx";
 import TradeHistory from "./TradeHistory.jsx";
+import ShowHistory from "./ShowHistory.jsx";
+import { ShowProvider, useShow } from "./ShowContext";
 import {
   LineChart,
   Line,
@@ -120,57 +121,13 @@ function LoginScreen() {
     setTimeout(() => setBgFade("show-bg"), 50);
   }, []);
   return (
-    <div
-      style={{
-        position: "relative",
-        minHeight: "100vh",
-        minWidth: "100vw",
-        fontFamily,
-        color: "#fff",
-        backgroundColor: "#181b1e"
-      }}
-    >
-      {/* 15% opacity login bg layer */}
-      <div
-        className={bgFade}
-        style={{
-          position: "fixed",
-          zIndex: 0,
-          top: 0, left: 0, right: 0, bottom: 0,
-          pointerEvents: "none",
-          backgroundImage: 'url("/login-bg.png")',
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-          backgroundRepeat: "no-repeat",
-          opacity: 0.15,
-          transition: "opacity 0.5s"
-        }}
-      />
-      <div
-        style={{
-          position: "relative",
-          zIndex: 1,
-          minHeight: "100vh",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center"
-        }}
-      >
-        <div
-          style={{
-            background: cardDark,
-            padding: 36,
-            borderRadius: 16,
-            boxShadow: "0 2px 32px #0e1f13",
-            minWidth: 350,
-            maxWidth: 380,
-            border: `2.5px solid ${accentGreen}80`
-          }}
-        >
-          <img src="/logo.png" alt="logo" style={{ width: 250, margin: "0 auto 10px", display: "block" }} />
-          <div style={{ fontWeight: 800, fontSize: 28, color: accentGreen, textAlign: "center" }}>Orion's Vault</div>
-          <div style={{ fontWeight: 600, fontSize: 18, color: "#fff", marginBottom: 22, textAlign: "center" }}>{mode === "login" ? "Vendor Login" : "Register"}</div>
+    <div className="login-root">
+      <div className={bgFade + " login-bg"} />
+      <div className="login-centerer">
+        <div className="login-box">
+          <img src="/logo.png" alt="logo" className="login-logo" />
+          <div className="login-title">Orion's Vault</div>
+          <div className="login-subtitle">{mode === "login" ? "Vendor Login" : "Register"}</div>
           <form onSubmit={mode === "login" ? handleLogin : handleRegister}>
             <input
               type="email"
@@ -178,9 +135,7 @@ function LoginScreen() {
               value={email}
               autoFocus
               onChange={e => setEmail(e.target.value)}
-              style={{
-                width: "100%", padding: 12, fontSize: 18, borderRadius: 7, border: "1.5px solid #444", background: "#191f18", color: "#fff", marginBottom: 18
-              }}
+              className="login-input"
               disabled={loading}
             />
             <input
@@ -188,30 +143,30 @@ function LoginScreen() {
               type="password"
               value={password}
               onChange={e => setPassword(e.target.value)}
-              style={{
-                width: "100%", padding: 12, fontSize: 18, borderRadius: 7, border: "1.5px solid #444", background: "#191f18", color: "#fff", marginBottom: 14
-              }}
+              className="login-input"
               disabled={loading}
             />
-            {error && <div style={{ color: "#f55", marginBottom: 10, fontWeight: 600 }}>{error}</div>}
-            <button type="submit" style={{
-              background: accentGreen, color: "#181b1e", border: "none", borderRadius: 7, fontWeight: 800, fontSize: 19, width: "100%", padding: "12px 0", marginBottom: 10, cursor: "pointer"
-            }} disabled={loading}>
+            {error && <div className="login-error">{error}</div>}
+            <button
+              type="submit"
+              className="login-btn"
+              disabled={loading}
+            >
               {mode === "login" ? (loading ? "Logging in..." : "Login") : (loading ? "Creating..." : "Create Account")}
             </button>
           </form>
-          <div style={{ color: "#bbb", fontSize: 15, marginTop: 8, textAlign: "center" }}>
+          <div className="login-toggle">
             {mode === "login" ? (
               <>
                 Don't have an account?{" "}
-                <span style={{ color: accentGreen, cursor: "pointer", fontWeight: 700 }} onClick={() => { setMode("register"); setError(""); }}>
+                <span className="login-toggle-link" onClick={() => { setMode("register"); setError(""); }}>
                   Register
                 </span>
               </>
             ) : (
               <>
                 Already have an account?{" "}
-                <span style={{ color: accentGreen, cursor: "pointer", fontWeight: 700 }} onClick={() => { setMode("login"); setError(""); }}>
+                <span className="login-toggle-link" onClick={() => { setMode("login"); setError(""); }}>
                   Login
                 </span>
               </>
@@ -237,10 +192,13 @@ function App() {
   const [fundsAdjust, setFundsAdjust] = useState("");
   const [fundsError, setFundsError] = useState("");
 
-  // === Show Mode State ===
+  // Show Mode state (for modal/button)
+  const { showActive, setShowActive } = useShow() || {};
   const [showModeModalOpen, setShowModeModalOpen] = useState(false);
   const [showNameInput, setShowNameInput] = useState("");
-  const [showActive, setShowActive] = useState(null);
+
+  // ==== Graph timeframe selector state ====
+  const [graphTimeframe, setGraphTimeframe] = useState("1M");
 
   // === Dynamic Backgrounds ===
   const backgroundImages = {
@@ -297,20 +255,6 @@ function App() {
       const log = await getDashboardLog(firebaseUser.uid);
       if (!cancelled) setDashboardLog(log);
 
-      // Show mode: fetch active show
-      const showsQ = query(
-        collection(db, "users", firebaseUser.uid, "shows"),
-        where("endTime", "==", null)
-      );
-      const showsSnap = await getDocs(showsQ);
-      if (!cancelled) {
-        if (!showsSnap.empty) {
-          setShowActive({ ...showsSnap.docs[0].data(), id: showsSnap.docs[0].id });
-        } else {
-          setShowActive(null);
-        }
-      }
-
       setLoading(false);
     }
     fetchAll();
@@ -346,187 +290,130 @@ function App() {
     setDashboardLog(await getDashboardLog(firebaseUser.uid));
   }
 
-  // === Show Mode logic ===
+  // === SHOW MODE FUNCTIONS ===
   async function startShow() {
-    if (!firebaseUser || !showNameInput.trim()) return;
-    const docRef = await addDoc(collection(db, "users", firebaseUser.uid, "shows"), {
-      showName: showNameInput.trim(),
-      startTime: new Date().toISOString(),
-      endTime: null,
-    });
-    setShowActive({
-      id: docRef.id,
-      showName: showNameInput.trim(),
-      startTime: new Date().toISOString(),
-      endTime: null,
-    });
+    if (!firebaseUser?.uid || !showNameInput.trim()) return;
+    const showData = {
+      showName: showNameInput,
+      startTime: Date.now(),
+      endTime: null
+    };
+    const docRef = await addDoc(collection(db, "users", firebaseUser.uid, "shows"), showData);
+    setShowActive({ ...showData, id: docRef.id });
     setShowModeModalOpen(false);
     setShowNameInput("");
   }
 
   async function endShow() {
-    if (!firebaseUser || !showActive) return;
-    await setDoc(
-      doc(db, "users", firebaseUser.uid, "shows", showActive.id),
-      { endTime: new Date().toISOString() },
-      { merge: true }
-    );
+    if (!firebaseUser?.uid || !showActive?.id) return;
+    await updateDoc(doc(db, "users", firebaseUser.uid, "shows", showActive.id), {
+      endTime: Date.now()
+    });
     setShowActive(null);
   }
-
-  const chartData = (dashboardLog.length
-    ? dashboardLog
-    : [{ ts: Date.now(), value: inventoryValue, cash: cashOnHand }]
-  ).map(log => ({
-    time: new Date(log.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-    Inventory: log.value,
-    Cash: log.cash
-  }));
 
   function handleLogout() {
     signOut(auth);
     setTab("dashboard");
   }
 
+  // ====== Graph Timeframe Filtering Logic ======
+  function getTimeframeMs(tf) {
+    const day = 24 * 60 * 60 * 1000;
+    switch (tf) {
+      case "1Y": return 365 * day;
+      case "6M": return 183 * day;
+      case "3M": return 92 * day;
+      case "1M": return 31 * day;
+      case "1W": return 7 * day;
+      case "1D": return 1 * day;
+      default: return 31 * day;
+    }
+  }
+  const now = Date.now();
+  const chartData = (dashboardLog.length
+    ? dashboardLog.filter(log => log.ts > now - getTimeframeMs(graphTimeframe))
+    : [{ ts: now, value: inventoryValue, cash: cashOnHand }]
+  ).map(log => ({
+    time:
+      graphTimeframe === "1D" || graphTimeframe === "1W"
+        ? new Date(log.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+        : new Date(log.ts).toLocaleDateString(),
+    Inventory: log.value,
+    Cash: log.cash
+  }));
+
   if (!firebaseUser) {
-    // LOGIN SCREEN BACKGROUND!
     return <LoginScreen />;
   }
 
   return (
     <UserContext.Provider value={firebaseUser}>
-      <div
-        className={`app-bg`}
-        style={{
-          position: "relative",
-          minHeight: "100vh",
-          minWidth: "100vw",
-          fontFamily,
-          color: "#fff",
-          backgroundColor: "#111314"
-        }}
-      >
-        {/* 15% opacity background image layer */}
-        <div
-          className={bgFade}
-          style={{
-            position: "fixed",
-            zIndex: 0,
-            top: 0, left: 0, right: 0, bottom: 0,
-            pointerEvents: "none",
-            backgroundImage: `url(${backgroundImageUrl})`,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            backgroundRepeat: "no-repeat",
-            opacity: 1.0,
-            transition: "opacity 0.5s"
-          }}
-        />
-        <div className="bg-overlay" style={{ position: "relative", zIndex: 1 }}>
-          {/* Header */}
-          <div className="header">
-            <img
-              src="/logo.png"
-              alt="Orion's Vault Logo"
-              className="header-logo"
-            />
-            <div className="header-title">
-              Orion's Vault Vendor Companion
+      <ShowProvider>
+        <div className={`app-bg`}>
+          {/* 15% opacity background image layer */}
+          <div
+            className={bgFade}
+            style={{
+              position: "fixed",
+              zIndex: 0,
+              top: 0, left: 0, right: 0, bottom: 0,
+              pointerEvents: "none",
+              backgroundImage: `url(${backgroundImageUrl})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              backgroundRepeat: "no-repeat",
+              opacity: 1.0,
+              transition: "opacity 0.5s"
+            }}
+          />
+          <div className="bg-overlay" style={{ position: "relative", zIndex: 1 }}>
+            {/* Header */}
+            <div className="header">
+              <img
+                src="/logo.png"
+                alt="Orion's Vault Logo"
+                className="header-logo"
+              />
+              <div className="header-title">
+                Orion's Vault Vendor Companion
+              </div>
+              <button
+                onClick={handleLogout}
+                className="logout-btn"
+              >
+                Log out
+              </button>
             </div>
-            <button
-              onClick={handleLogout}
-              className="logout-btn"
-            >
-              Log out
-            </button>
-          </div>
 
-          {/* Navigation Tabs */}
-          <div className="tabs">
-            <button
-              className={`tab-btn${tab === "dashboard" ? " active" : ""}`}
-              onClick={() => setTab("dashboard")}
-            >
-              Dashboard
-            </button>
-            <button
-              className={`tab-btn${tab === "trade" ? " active" : ""}`}
-              onClick={() => setTab("trade")}
-            >
-              Trade
-            </button>
-            <button
-              className={`tab-btn${tab === "inventory" ? " active" : ""}`}
-              onClick={() => setTab("inventory")}
-            >
-              Inventory
-            </button>
-            <button
-              className={`tab-btn${tab === "lookup" ? " active" : ""}`}
-              onClick={() => setTab("lookup")}
-            >
-              Card Lookup
-            </button>
-            <button
-              className={`tab-btn${tab === "history" ? " active" : ""}`}
-              onClick={() => setTab("history")}
-            >
-              Trade History
-            </button>
-          </div>
+            {/* Navigation Tabs */}
+            <div className="tabs">
+              <button className={`tab-btn${tab === "dashboard" ? " active" : ""}`} onClick={() => setTab("dashboard")}>Dashboard</button>
+              <button className={`tab-btn${tab === "trade" ? " active" : ""}`} onClick={() => setTab("trade")}>Trade</button>
+              <button className={`tab-btn${tab === "inventory" ? " active" : ""}`} onClick={() => setTab("inventory")}>Inventory</button>
+              <button className={`tab-btn${tab === "lookup" ? " active" : ""}`} onClick={() => setTab("lookup")}>Card Lookup</button>
+              <button className={`tab-btn${tab === "history" ? " active" : ""}`} onClick={() => setTab("history")}>Trade History</button>
+              <button className={`tab-btn${tab === "shows" ? " active" : ""}`} onClick={() => setTab("shows")}>Show History</button>
+            </div>
 
-          {/* Dashboard Graph and Widgets */}
-          {tab === "dashboard" && (
-            <div className="dashboard-card">
-              <>
-                {/* --- Show Mode Button --- */}
-                <div style={{ margin: "14px 0 10px 0", textAlign: "center" }}>
-                  {!showActive && (
-                    <button
-                      className="show-mode-btn"
-                      onClick={() => setShowModeModalOpen(true)}
-                      style={{
-                        background: "#222",
-                        color: "#00b84a",
-                        fontWeight: 700,
-                        border: "2px solid #00b84a",
-                        borderRadius: 9,
-                        fontSize: 18,
-                        padding: "12px 38px",
-                        cursor: "pointer",
-                        margin: "0 auto",
-                        transition: "background 0.14s, color 0.14s, border 0.14s",
-                      }}
-                    >
-                      Start Show Mode
+            {/* Dashboard Graph and Widgets */}
+            {tab === "dashboard" && (
+              <div className="dashboard-card">
+                {/* SHOW MODE BUTTON/MODAL */}
+                <div className="show-btn-row">
+                  {!showActive ? (
+                <button className="trade-modal-btn green-btn show-btn-lg" onClick={() => setShowModeModalOpen(true)}>
+                      Start Show
                     </button>
-                  )}
-                  {showActive && (
-                    <button
-                      className="show-mode-btn end"
-                      onClick={endShow}
-                      style={{
-                        background: "#f4453c",
-                        color: "#fff",
-                        fontWeight: 700,
-                        border: "2px solid #b20000",
-                        borderRadius: 9,
-                        fontSize: 18,
-                        padding: "12px 38px",
-                        cursor: "pointer",
-                        margin: "0 auto",
-                        transition: "background 0.14s, color 0.14s, border 0.14s",
-                      }}
-                    >
+                  ) : (
+                    <button className="trade-modal-btn red-btn" onClick={endShow}>
                       End Show{showActive.showName ? ` (${showActive.showName})` : ""}
                     </button>
                   )}
                 </div>
-
-                {/* Show Mode Modal */}
                 {showModeModalOpen && (
                   <div className="trade-modal-bg">
-                    <div className="trade-modal" style={{ minWidth: 340, maxWidth: 410 }}>
+                    <div className="trade-modal">
                       <div className="trade-modal-title">Start Show Mode</div>
                       <input
                         className="trade-modal-input"
@@ -534,118 +421,47 @@ function App() {
                         placeholder="Show Name"
                         value={showNameInput}
                         onChange={e => setShowNameInput(e.target.value)}
+                        autoFocus
                       />
-                      <button
-                        className="trade-modal-btn"
-                        onClick={startShow}
-                        disabled={!showNameInput.trim()}
-                      >
-                        Confirm
-                      </button>
-                      <button
-                        className="trade-modal-cancel-btn"
-                        onClick={() => setShowModeModalOpen(false)}
-                      >
-                        Cancel
-                      </button>
+                      <div className="trade-modal-btn-row">
+                        <button className="trade-modal-btn green-btn" onClick={startShow} disabled={!showNameInput.trim()}>
+                          Start
+                        </button>
+                        <button className="trade-modal-cancel-btn" onClick={() => setShowModeModalOpen(false)}>
+                          Cancel
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
 
                 {/* --- Dashboard Widgets --- */}
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 48,
-                    justifyContent: "center",
-                    marginBottom: 22,
-                    flexWrap: "wrap"
-                  }}
-                >
-                  <div style={{
-                    background: "#162815",
-                    color: accentGreen,
-                    padding: "24px 36px",
-                    borderRadius: 12,
-                    minWidth: 170,
-                    textAlign: "center",
-                    fontWeight: 700,
-                    fontSize: 21,
-                    boxShadow: "0 2px 10px #001e1940",
-                    border: `2px solid ${accentGreen}55`,
-                    marginBottom: 10
-                  }}>
-                    <div style={{ fontSize: 15, color: "#b5ffe1" }}>Cash on Hand</div>
-                    <div style={{ fontSize: 32, marginTop: 6 }}>
+                <div className="dashboard-widgets">
+                  <div className="dashboard-widget cash-widget">
+                    <div className="dashboard-widget-title">Cash on Hand</div>
+                    <div className="dashboard-widget-value">
                       ${cashOnHand.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
                   </div>
-                  <div style={{
-                    background: "#181f23",
-                    color: accentGreen,
-                    padding: "24px 36px",
-                    borderRadius: 12,
-                    minWidth: 170,
-                    textAlign: "center",
-                    fontWeight: 700,
-                    fontSize: 21,
-                    boxShadow: "0 2px 10px #001e1940",
-                    border: `2px solid ${accentGreen}55`,
-                    marginBottom: 10
-                  }}>
-                    <div style={{ fontSize: 15, color: "#b5dfff" }}>Inventory Value</div>
-                    <div style={{ fontSize: 32, marginTop: 6 }}>
+                  <div className="dashboard-widget inv-widget">
+                    <div className="dashboard-widget-title">Inventory Value</div>
+                    <div className="dashboard-widget-value">
                       ${inventoryValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
                   </div>
-                  <div style={{
-                    background: "#1c2338",
-                    color: "#4ec6ff",
-                    padding: "24px 36px",
-                    borderRadius: 12,
-                    minWidth: 170,
-                    textAlign: "center",
-                    fontWeight: 700,
-                    fontSize: 21,
-                    boxShadow: "0 2px 10px #001e1940",
-                    border: `2px solid #4ec6ff55`,
-                    marginBottom: 10
-                  }}>
-                    <div style={{ fontSize: 15, color: "#b5dfff" }}>Pending Card Sales</div>
-                    <div style={{ fontSize: 32, marginTop: 6 }}>
+                  <div className="dashboard-widget pending-widget">
+                    <div className="dashboard-widget-title">Pending Card Sales</div>
+                    <div className="dashboard-widget-value">
                       ${pendingCardSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
-                    <button
-                      style={{
-                        background: "#1c2338",
-                        color: "#3e86cf",
-                        border: "none",
-                        borderRadius: 6,
-                        padding: "7px 18px",
-                        fontWeight: 700,
-                        fontSize: 15,
-                        cursor: "pointer",
-                        marginTop: 10
-                      }}
-                      onClick={clearCardSales}
-                    >
+                    <button className="clear-card-btn" onClick={clearCardSales}>
                       Clear Card Transactions
                     </button>
                   </div>
                 </div>
-                <div style={{
-                  background: "#202c20",
-                  borderRadius: 12,
-                  padding: "22px 32px",
-                  margin: "24px auto 0",
-                  textAlign: "center",
-                  maxWidth: 350,
-                  border: `2px solid ${accentGreen}40`
-                }}>
-                  <div style={{ color: accentGreen, fontWeight: 700, fontSize: 18, marginBottom: 8 }}>
-                    Adjust Funds
-                  </div>
-                  <div style={{ display: "flex", gap: 12, justifyContent: "center", alignItems: "center", marginBottom: 12 }}>
+                <div className="funds-adjust-box">
+                  <div className="funds-title">Adjust Funds</div>
+                  <div className="funds-row">
                     <input
                       type="number"
                       min="0"
@@ -655,122 +471,96 @@ function App() {
                         setFundsAdjust(e.target.value);
                         setFundsError("");
                       }}
-                      style={{
-                        padding: 9,
-                        fontSize: 18,
-                        borderRadius: 8,
-                        border: "1.5px solid #444",
-                        background: "#191f18",
-                        color: "#fff",
-                        width: 100
-                      }}
+                      className="funds-input"
                       placeholder="Amount"
                     />
-                    <span style={{ color: "#fff", fontSize: 19 }}>$</span>
+                    <span className="funds-dollar">$</span>
                   </div>
-                  {fundsError && <div style={{ color: "#ff8888", fontWeight: 700, marginBottom: 6 }}>{fundsError}</div>}
-                  <button
-                    style={{
-                      background: accentGreen,
-                      color: "#181b1e",
-                      border: "none",
-                      borderRadius: 7,
-                      fontWeight: 700,
-                      padding: "8px 28px",
-                      fontSize: 17,
-                      cursor: "pointer",
-                      marginRight: 8
-                    }}
-                    onClick={() => adjustFunds("add")}
-                  >
+                  {fundsError && <div className="funds-error">{fundsError}</div>}
+                  <button className="green-btn funds-btn" onClick={() => adjustFunds("add")}>
                     Add Funds
                   </button>
-                  <button
-                    style={{
-                      background: "#b72222",
-                      color: "#fff",
-                      border: "none",
-                      borderRadius: 7,
-                      fontWeight: 700,
-                      padding: "8px 16px",
-                      fontSize: 17,
-                      cursor: "pointer",
-                      marginLeft: 8
-                    }}
-                    onClick={() => adjustFunds("subtract")}
-                  >
+                  <button className="red-btn funds-btn" onClick={() => adjustFunds("subtract")}>
                     Subtract Funds
                   </button>
                 </div>
-                <div
-                  style={{
-                    fontWeight: 600,
-                    color: accentGreen,
-                    fontSize: 20,
-                    marginBottom: 12,
-                    marginTop: 40
-                  }}
-                >
-                  Value Trend (Last 24 Hours)
+                <div className="dashboard-graph-controls">
+                  {["1Y", "6M", "3M", "1M", "1W", "1D"].map(tf => (
+                    <button
+                      key={tf}
+                      className={`graph-btn${graphTimeframe === tf ? " active" : ""}`}
+                      onClick={() => setGraphTimeframe(tf)}
+                    >
+                      {tf}
+                    </button>
+                  ))}
+                </div>
+                <div className="dashboard-trend-title">
+                  Value Trend ({graphTimeframe} Selected)
                 </div>
                 <ResponsiveContainer width="100%" height={260}>
-                  <LineChart data={chartData}>
-                    <CartesianGrid stroke="#232" strokeDasharray="4" />
-                    <XAxis dataKey="time" tick={{ fill: "#cfc" }} />
-                    <YAxis tick={{ fill: "#cfc" }} domain={["auto", "auto"]} />
-                    <Tooltip
-                      contentStyle={{
-                        background: cardDark,
-                        border: "1px solid #233",
-                        color: "#fff",
-                      }}
-                      labelStyle={{ color: "#fff" }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="Inventory"
-                      name="Inventory Value"
-                      stroke={blueLine}
-                      strokeWidth={3}
-                      dot={{ fill: blueLine }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="Cash"
-                      name="Cash on Hand"
-                      stroke={accentGreen}
-                      strokeWidth={3}
-                      dot={{ fill: accentGreen }}
-                    />
-                  </LineChart>
+                  {chartData.length === 0 ? (
+                    <div style={{ color: "#aaa", padding: 40, textAlign: "center" }}>No data for selected range.</div>
+                  ) : (
+                    <LineChart data={chartData}>
+                      <CartesianGrid stroke="#232" strokeDasharray="4" />
+                      <XAxis dataKey="time" tick={{ fill: "#cfc" }} />
+                      <YAxis tick={{ fill: "#cfc" }} domain={["auto", "auto"]} />
+                      <Tooltip
+                        contentStyle={{
+                          background: cardDark,
+                          border: "1px solid #233",
+                          color: "#fff",
+                        }}
+                        labelStyle={{ color: "#fff" }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="Inventory"
+                        name="Inventory Value"
+                        stroke={blueLine}
+                        strokeWidth={3}
+                        dot={{ fill: blueLine }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="Cash"
+                        name="Cash on Hand"
+                        stroke={accentGreen}
+                        strokeWidth={3}
+                        dot={{ fill: accentGreen }}
+                      />
+                    </LineChart>
+                  )}
                 </ResponsiveContainer>
-              </>
-            </div>
-          )}
-
-          {/* Tab Content */}
-          <div className="tab-content">
-            {tab === "dashboard" && (
-              <div style={{ color: "#fff" }}>
-                <h2 style={{ color: accentGreen, marginTop: 0 }}>
-                  Welcome to Orion's Vault Vendor Companion
-                </h2>
-                <p>
-                  Use the tabs above to manage your inventory, lookup cards, or
-                  start a trade.
-                </p>
-                <div style={{ color: "#aaa", fontSize: 15, marginTop: 28 }}>
-                  <b>Logged in as:</b> {firebaseUser.email}
-                </div>
               </div>
             )}
-            {tab === "trade" && <TradeTab />}
-            {tab === "inventory" && <Inventory />}
-            {tab === "lookup" && <CardLookup />}
-            {tab === "history" && <TradeHistory />}
+
+            {/* Tab Content */}
+            <div className="tab-content">
+              {tab === "dashboard" && (
+                <div style={{ color: "#fff" }}>
+                  <h2 style={{ color: accentGreen, marginTop: 0 }}>
+                    Welcome to Orion's Vault Vendor Companion
+                  </h2>
+                  <p>
+                    Use the tabs above to manage your inventory, lookup cards, or
+                    start a trade.
+                  </p>
+                  <div style={{ color: "#aaa", fontSize: 15, marginTop: 28 }}>
+                    <b>Logged in as:</b> {firebaseUser.email}
+                  </div>
+                </div>
+              )}
+              {tab === "trade" && <TradeTab />}
+              {tab === "inventory" && <Inventory />}
+              {tab === "lookup" && <CardLookup />}
+              {tab === "history" && <TradeHistory />}
+              {tab === "shows" && <ShowHistory />}
+            </div>
           </div>
         </div>
-      </div>
+      </ShowProvider>
     </UserContext.Provider>
   );
 }
