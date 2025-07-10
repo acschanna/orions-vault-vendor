@@ -1,45 +1,56 @@
+/* src/App.css */
+
 body {
   margin: 0;
   font-family: 'Inter', Arial, Helvetica, sans-serif;
   background: #111314;
 }
 
+/* Background layers */
 .app-bg {
   min-height: 100vh;
-  min-width: 100vw;
+  min-width: 100%; /* extend overlay to content width */
   color: #fff;
   background-image: url("/pokemon-bg.png");
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
   position: relative;
+  transition: background-image 0.2s linear, background-color 0.4s, color 0.2s;
+}
+.app-bg.fade-bg {
+  opacity: 0;
+  transition: opacity 0.35s;
+}
+.app-bg.show-bg {
+  opacity: 1;
+  transition: opacity 0.5s;
 }
 
+/* Overlay for readability */
 .bg-overlay {
   min-height: 100vh;
-  background: rgba(17,19,20,0.91); /* same overlay for readability */
-  width: 100vw;
+  background: rgba(17,19,20,0.91);
+  width: 100%; /* extend overlay to content width */
 }
 
+/* Header */
 .header {
-  padding: 24px 0 12px 0;
+  padding: 24px 0 12px;
   text-align: center;
   position: relative;
 }
-
 .header-logo {
   width: 250px;
   margin-bottom: 8px;
 }
-
 .header-title {
   font-weight: 800;
   font-size: 32px;
-  letter-spacing: .5px;
+  letter-spacing: 0.5px;
   color: #00b84a;
   margin-top: 5px;
 }
-
 .logout-btn {
   position: absolute;
   top: 30px;
@@ -54,13 +65,13 @@ body {
   cursor: pointer;
 }
 
+/* Navigation Tabs */
 .tabs {
   display: flex;
   justify-content: center;
   gap: 30px;
-  margin: 30px 0 24px 0;
+  margin: 30px 0 24px;
 }
-
 .tab-btn {
   background: #181b1e;
   color: #fff;
@@ -70,47 +81,42 @@ body {
   font-weight: 600;
   cursor: pointer;
   font-size: 18px;
-  transition: background .18s, color .18s;
+  transition: background 0.18s, color 0.18s;
 }
-
 .tab-btn.active {
   background: #00b84a;
   color: #181b1e;
 }
 
+/* Content Cards */
 .dashboard-card,
 .tab-content {
   background: #181b1e;
   border-radius: 14px;
-  margin: 0 auto;
-  margin-bottom: 28px;
+  margin: 0 auto 28px;
   max-width: 1200px;
   box-shadow: 0 2px 12px #121b1277;
   padding: 32px;
+  overflow-x: auto; /* allow horizontal scrolling within the card */
+  -webkit-overflow-scrolling: touch; /* smooth scrolling on iOS */
 }
-
 .tab-content {
   min-height: 260px;
   margin-bottom: 40px;
   padding: 24px;
 }
 
-.app-bg {
-  transition: background-image 0.2s linear, background-color 0.4s, color 0.2s;
-  position: relative;
-}
-.app-bg.fade-bg {
-  opacity: 0;
-  transition: opacity 0.35s;
-}
-.app-bg.show-bg {
-  opacity: 1;
-  transition: opacity 0.5s;
+/* Desktop inventory table full-width */
+.tab-content table {
+  width: 100%;
+  display: table;
+  table-layout: auto;
 }
 
+/* Login Screen Background */
 .login-bg {
   min-height: 100vh;
-  background-image: url("/login-bg.png"); /* Use your file name */
+  background-image: url("/login-bg.png");
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
@@ -118,4 +124,64 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+}
+
+/* Responsive styles for mobile devices */
+@media (max-width: 768px) {
+  /* Header adjustments */
+  .header-logo {
+    width: 150px;
+  }
+  .header-title {
+    font-size: 24px;
+  }
+  .logout-btn {
+    top: 16px;
+    right: 16px;
+    padding: 6px 12px;
+    font-size: 14px;
+  }
+
+  /* Move tabs to bottom and make them full-width */
+  .tabs {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    justify-content: space-around;
+    gap: 0;
+    padding: 12px 16px; /* increased for touch targets + horizontal padding */
+    background: #181b1e;
+    margin: 0;
+    box-shadow: 0 -2px 8px #00000088;
+  }
+  .tab-btn {
+    flex: 1;
+    margin: 0;
+    padding: 12px 0; /* added a bit more padding */
+    font-size: 14px; /* slightly smaller font for mobile nav */
+    border-radius: 0;
+  }
+
+  /* Content spacing to avoid the fixed bottom nav */
+  .dashboard-card,
+  .tab-content {
+    margin: 0 8px 80px;
+    padding: 16px;
+    border-radius: 8px;
+    max-width: none;
+  }
+
+  /* Adjust background image focus */
+  .app-bg {
+    background-position: top center;
+  }
+
+  /* Enable table scrolling for wide content */
+  .tab-content table {
+    display: block;
+    width: max-content;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
 }

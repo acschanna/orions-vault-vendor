@@ -1,3 +1,4 @@
+// src/Inventory.jsx
 import React, { useEffect, useState } from "react";
 import { useUser } from "./App";
 import { db } from "./firebase";
@@ -13,7 +14,8 @@ import {
 } from "firebase/firestore";
 import "./Inventory.css";
 
-const accentGreen = "#00b84a";
+const EDITION_OPTIONS = ["1st Edition", "Unlimited", "Shadowless"];
+const PTCG_API_KEY = "d49129a9-8f4c-4130-968a-cd47501df765";
 
 export default function Inventory() {
   const user = useUser();
@@ -23,23 +25,30 @@ export default function Inventory() {
   const [csvError, setCsvError] = useState("");
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [updatingPrices, setUpdatingPrices] = useState(false);
   const [filter, setFilter] = useState("");
   const [search, setSearch] = useState("");
 
-  // Fetch inventory from Firestore
+  // Inline-edit state
+  const [editingId, setEditingId] = useState(null);
+  const [draft, setDraft] = useState({ marketValue: "", edition: "" });
+
+  // Fetch inventory
   useEffect(() => {
     if (!uid) return;
     setLoading(true);
-    const fetchInventory = async () => {
-      const q = query(collection(db, "users", uid, "inventory"), orderBy("dateAdded", "asc"));
+    (async () => {
+      const q = query(
+        collection(db, "users", uid, "inventory"),
+        orderBy("dateAdded", "asc")
+      );
       const snap = await getDocs(q);
       setInventory(snap.docs.map((d) => ({ ...d.data(), id: d.id })));
       setLoading(false);
-    };
-    fetchInventory();
+    })();
   }, [uid]);
 
-  // CSV import
+  // CSV import (includes edition)
   const handleImportCSV = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -51,24 +60,30 @@ export default function Inventory() {
       if (rows.length < 2) throw new Error("CSV missing data.");
       const headers = rows[0].split(",");
       const items = rows.slice(1).map((row) => {
-        const values = row.split(",");
-        const item = {};
-        headers.forEach((h, i) => {
-          item[h.trim()] = values[i]?.trim();
-        });
-        return item;
+        const cols = row.split(",");
+        const itm = {};
+        headers.forEach((h, i) => (itm[h.trim()] = cols[i]?.trim()));
+        return itm;
       });
-      // Add each item to Firestore
       for (let item of items) {
         await addDoc(collection(db, "users", uid, "inventory"), {
           ...item,
           marketValue: Number(item.marketValue || 0),
           acquisitionCost: Number(item.acquisitionCost || 0),
+          condition: item.condition || "",
+          edition: EDITION_OPTIONS.includes(item.edition)
+            ? item.edition
+            : "",
           dateAdded: item.dateAdded || new Date().toISOString(),
         });
       }
-      // Refresh
-      const snap = await getDocs(collection(db, "users", uid, "inventory"));
+      // refresh
+      const snap = await getDocs(
+        query(
+          collection(db, "users", uid, "inventory"),
+          orderBy("dateAdded", "asc")
+        )
+      );
       setInventory(snap.docs.map((d) => ({ ...d.data(), id: d.id })));
     } catch (err) {
       setCsvError("Import failed: " + err.message);
@@ -76,7 +91,7 @@ export default function Inventory() {
     setImporting(false);
   };
 
-  // CSV export
+  // CSV export (includes edition)
   const handleExportCSV = () => {
     setExporting(true);
     const headers = [
@@ -86,11 +101,14 @@ export default function Inventory() {
       "marketValue",
       "acquisitionCost",
       "condition",
+      "edition",
       "dateAdded",
     ];
     const rows = [headers.join(",")];
     inventory.forEach((item) => {
-      const row = headers.map((h) => `"${(item[h] ?? "").toString().replace(/"/g, '""')}"`).join(",");
+      const row = headers
+        .map((h) => `"${(item[h] ?? "").toString().replace(/"/g, '""')}"`)
+        .join(",");
       rows.push(row);
     });
     const csv = rows.join("\n");
@@ -105,6 +123,45 @@ export default function Inventory() {
     setExporting(false);
   };
 
+  // Update prices via Pokémon TCG API
+  const handleUpdatePrices = async () => {
+    if (!window.confirm("Fetch latest prices for all cards?")) return;
+    setUpdatingPrices(true);
+    for (let item of inventory) {
+      try {
+        const res = await fetch(
+          `https://api.pokemontcg.io/v2/cards?q=name:"${encodeURIComponent(
+            item.cardName
+          )}" set.name:"${encodeURIComponent(
+            item.setName
+          )}" number:"${encodeURIComponent(item.cardNumber)}"`,
+          {
+            headers: { "X-Api-Key": PTCG_API_KEY },
+          }
+        );
+        const json = await res.json();
+        const price =
+          json.data?.[0]?.cardmarket?.prices?.averageSellPrice ??
+          item.marketValue;
+        await updateDoc(
+          doc(db, "users", uid, "inventory", item.id),
+          { marketValue: price }
+        );
+      } catch (err) {
+        console.error("Price update failed for", item.id, err);
+      }
+    }
+    // refresh inventory
+    const snap = await getDocs(
+      query(
+        collection(db, "users", uid, "inventory"),
+        orderBy("dateAdded", "asc")
+      )
+    );
+    setInventory(snap.docs.map((d) => ({ ...d.data(), id: d.id })));
+    setUpdatingPrices(false);
+  };
+
   // Delete card
   const handleDelete = async (id) => {
     if (!window.confirm("Remove this card from inventory?")) return;
@@ -112,8 +169,41 @@ export default function Inventory() {
     setInventory((prev) => prev.filter((c) => c.id !== id));
   };
 
-  // Table filtering/search
-  const filteredInventory = inventory
+  // Start inline edit
+  const startEdit = (item) => {
+    setEditingId(item.id);
+    setDraft({
+      marketValue: (item.marketValue ?? "").toString(),
+      edition: EDITION_OPTIONS.includes(item.edition)
+        ? item.edition
+        : "",
+    });
+  };
+
+  // Cancel inline edit
+  const cancelEdit = () => {
+    setEditingId(null);
+    setDraft({ marketValue: "", edition: "" });
+  };
+
+  // Save inline edit
+  const saveEdit = async (id) => {
+    const updated = {
+      marketValue: Number(draft.marketValue) || 0,
+      edition: draft.edition,
+    };
+    setInventory((prev) =>
+      prev.map((i) => (i.id === id ? { ...i, ...updated } : i))
+    );
+    await updateDoc(
+      doc(db, "users", uid, "inventory", id),
+      updated
+    );
+    cancelEdit();
+  };
+
+  // Filtering & search
+  const filtered = inventory
     .filter((item) =>
       !filter ||
       (filter === "cards" && item.type !== "sealed") ||
@@ -121,13 +211,16 @@ export default function Inventory() {
     )
     .filter((item) =>
       !search ||
-      (item.cardName?.toLowerCase().includes(search.toLowerCase()) ||
-        item.setName?.toLowerCase().includes(search.toLowerCase()) ||
-        item.cardNumber?.toLowerCase().includes(search.toLowerCase()))
+      item.cardName?.toLowerCase().includes(search.toLowerCase()) ||
+      item.setName?.toLowerCase().includes(search.toLowerCase()) ||
+      item.cardNumber?.toLowerCase().includes(search.toLowerCase())
     );
 
-  // Inventory stats
-  const totalValue = inventory.reduce((sum, c) => sum + (Number(c.marketValue) || 0), 0);
+  // Summary stats
+  const totalValue = inventory.reduce(
+    (sum, c) => sum + (Number(c.marketValue) || 0),
+    0
+  );
   const totalCards = inventory.filter((c) => c.type !== "sealed").length;
   const totalSealed = inventory.filter((c) => c.type === "sealed").length;
 
@@ -135,8 +228,11 @@ export default function Inventory() {
     <div className="inventory-root">
       <div className="inventory-header-row">
         <h2 className="inventory-title">Inventory</h2>
-        <span className="inventory-subheading">All items currently in stock.</span>
-        <label className="inventory-action-btn" style={{ marginTop: 0 }}>
+        <span className="inventory-subheading">
+          All items currently in stock.
+        </span>
+
+        <label className="inventory-action-btn">
           Import CSV
           <input
             type="file"
@@ -146,6 +242,7 @@ export default function Inventory() {
             disabled={importing}
           />
         </label>
+
         <button
           className="inventory-action-btn secondary"
           onClick={handleExportCSV}
@@ -153,6 +250,15 @@ export default function Inventory() {
         >
           Export CSV
         </button>
+
+        <button
+          className="inventory-action-btn"
+          onClick={handleUpdatePrices}
+          disabled={updatingPrices}
+        >
+          {updatingPrices ? "Updating…" : "Update Prices"}
+        </button>
+
         <select
           className="inventory-filter-select"
           value={filter}
@@ -162,6 +268,7 @@ export default function Inventory() {
           <option value="cards">Cards Only</option>
           <option value="sealed">Sealed Only</option>
         </select>
+
         <input
           className="inventory-input"
           placeholder="Search by name, set, or #"
@@ -171,10 +278,13 @@ export default function Inventory() {
       </div>
 
       {csvError && <div className="inventory-error">{csvError}</div>}
+
       {loading ? (
         <div className="inventory-loading">Loading inventory...</div>
-      ) : filteredInventory.length === 0 ? (
-        <div className="inventory-empty">No items found in inventory.</div>
+      ) : filtered.length === 0 ? (
+        <div className="inventory-empty">
+          No items found in inventory.
+        </div>
       ) : (
         <table className="inventory-table">
           <thead>
@@ -185,35 +295,102 @@ export default function Inventory() {
               <th>Market Value</th>
               <th>Acq. Cost</th>
               <th>Condition</th>
+              <th>Edition</th>
               <th>Date Added</th>
-              <th></th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {filteredInventory.map((item) => (
+            {filtered.map((item) => (
               <tr key={item.id}>
-                <td className="card-name">{item.cardName || item.productName}</td>
-                <td className="card-set">{item.setName || item.productType || ""}</td>
-                <td>{item.cardNumber || item.quantity || ""}</td>
-                <td className="market-value">
-                  ${Number(item.marketValue || 0).toFixed(2)}
+                <td className="card-name">
+                  {item.cardName || item.productName}
+                </td>
+                <td className="card-set">
+                  {item.setName || item.productType}
+                </td>
+                <td>{item.cardNumber || item.quantity}</td>
+                <td>
+                  {editingId === item.id ? (
+                    <input
+                      type="text"
+                      className="inventory-input inline-edit-input"
+                      value={draft.marketValue}
+                      onChange={(e) =>
+                        setDraft((d) => ({
+                          ...d,
+                          marketValue: e.target.value,
+                        }))
+                      }
+                    />
+                  ) : (
+                    `$${Number(item.marketValue || 0).toFixed(2)}`
+                  )}
                 </td>
                 <td className="acquisition-cost">
                   ${Number(item.acquisitionCost || 0).toFixed(2)}
                 </td>
                 <td className="condition">{item.condition}</td>
                 <td>
+                  {editingId === item.id ? (
+                    <select
+                      className="inventory-filter-select inline-edit-select"
+                      value={draft.edition}
+                      onChange={(e) =>
+                        setDraft((d) => ({
+                          ...d,
+                          edition: e.target.value,
+                        }))
+                      }
+                    >
+                      <option value="">—</option>
+                      {EDITION_OPTIONS.map((ed) => (
+                        <option key={ed} value={ed}>
+                          {ed}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    item.edition || "—"
+                  )}
+                </td>
+                <td>
                   {item.dateAdded
                     ? new Date(item.dateAdded).toLocaleDateString()
                     : ""}
                 </td>
                 <td>
-                  <button
-                    className="delete-btn"
-                    onClick={() => handleDelete(item.id)}
-                  >
-                    ❌
-                  </button>
+                  {editingId === item.id ? (
+                    <>
+                      <button
+                        className="inventory-action-btn inline-save-btn"
+                        onClick={() => saveEdit(item.id)}
+                      >
+                        Save
+                      </button>
+                      <button
+                        className="inventory-action-btn secondary inline-cancel-btn"
+                        onClick={cancelEdit}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        className="inventory-action-btn secondary inline-edit-btn"
+                        onClick={() => startEdit(item)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="delete-btn"
+                        onClick={() => handleDelete(item.id)}
+                      >
+                        ❌
+                      </button>
+                    </>
+                  )}
                 </td>
               </tr>
             ))}
@@ -221,21 +398,29 @@ export default function Inventory() {
         </table>
       )}
 
-      {/* Summary Stats */}
       <div className="inventory-summary-row">
         <div className="inventory-summary-box">
-          <div className="inventory-summary-title">Inventory Value</div>
+          <div className="inventory-summary-title">
+            Inventory Value
+          </div>
           <div className="inventory-summary-value">
-            ${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            ${totalValue.toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}
           </div>
         </div>
         <div className="inventory-summary-box">
           <div className="inventory-summary-title">Cards</div>
-          <div className="inventory-summary-value">{totalCards}</div>
+          <div className="inventory-summary-value">
+            {totalCards}
+          </div>
         </div>
         <div className="inventory-summary-box">
           <div className="inventory-summary-title">Sealed</div>
-          <div className="inventory-summary-value">{totalSealed}</div>
+          <div className="inventory-summary-value">
+            {totalSealed}
+          </div>
         </div>
       </div>
     </div>

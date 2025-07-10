@@ -1,0 +1,104 @@
+{/* Customer Lookup Modal */}
+{showCustomerLookup && (
+  <div className="trade-lookup-modal-bg">
+    <div
+      className="trade-lookup-modal"
+      style={{ maxHeight: "95vh", overflowY: "auto" }}
+    >
+      <div className="trade-modal-title">Lookup Pokémon Card</div>
+
+      <select
+        value={customerSearchType}
+        onChange={e => setCustomerSearchType(e.target.value)}
+        style={{ width: "93%", padding: 9, marginBottom: 10 }}
+      >
+        <option value="name">Search by Name</option>
+        <option value="number">Search by Number</option>
+      </select>
+
+      {customerSearchType === "name" ? (
+        <input
+          placeholder="Card Name"
+          value={customerLookupQuery}
+          onChange={e => setCustomerLookupQuery(e.target.value)}
+          style={{ width: "93%", padding: 9, marginBottom: 10 }}
+          onKeyDown={e => {
+            if (e.key === "Enter") lookupCustomerCards(1);
+          }}
+        />
+      ) : (
+        <input
+          placeholder="Card Number (e.g. 14/150)"
+          value={customerLookupNumber}
+          onChange={e => setCustomerLookupNumber(e.target.value)}
+          style={{ width: "93%", padding: 9, marginBottom: 10 }}
+          onKeyDown={e => {
+            if (e.key === "Enter") lookupCustomerCards(1);
+          }}
+        />
+      )}
+
+      <select
+        value={customerLookupCondition}
+        onChange={e => setCustomerLookupCondition(e.target.value)}
+        style={{ width: "93%", padding: 9, marginBottom: 10 }}
+      >
+        <option value="NM">Near Mint (NM)</option>
+        <option value="LP">Light Play (LP)</option>
+        <option value="MP">Moderate Play (MP)</option>
+        <option value="HP">Heavy Play (HP)</option>
+        <option value="DMG">Damaged</option>
+      </select>
+
+      <button
+        className="trade-modal-btn"
+        onClick={() => lookupCustomerCards(1)}
+        disabled={customerLookupLoading}
+      >
+        Lookup
+      </button>
+      <button
+        className="trade-modal-cancel-btn"
+        onClick={() => setShowCustomerLookup(false)}
+      >
+        Cancel
+      </button>
+
+      {customerLookupLoading && (
+        <div style={{ color: accentGreen, marginTop: 10 }}>Loading...</div>
+      )}
+
+      <div style={{ marginTop: 12 }}>
+        {customerLookupResults.length > 0 ? (
+          <table className="trade-side-table">
+            {/* …results rows unchanged… */}
+          </table>
+        ) : !customerLookupLoading ? (
+          <div style={{ color: "#aaa", marginTop: 12 }}>No cards found.</div>
+        ) : null}
+      </div>
+
+      {customerLookupTotalResults > 8 && (
+        <div style={{ textAlign: "center", marginTop: 12 }}>
+          <button
+            className="trade-side-btn"
+            disabled={customerLookupPage === 1}
+            onClick={() => lookupCustomerCards(customerLookupPage - 1)}
+          >
+            Prev
+          </button>
+          <span style={{ color: "#fff", fontWeight: "bold", margin: "0 10px" }}>
+            Page {customerLookupPage}
+          </span>
+          <button
+            className="trade-side-btn"
+            disabled={customerLookupResults.length < 8}
+            onClick={() => lookupCustomerCards(customerLookupPage + 1)}
+          >
+            Next
+          </button>
+        </div>
+      )}
+    </div>
+  </div>
+)}

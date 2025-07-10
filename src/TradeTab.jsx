@@ -1024,18 +1024,19 @@ export default function TradeTab() {
                       <tr key={card.id}>
                         <td>
                           <img
-                            src={card.images?.medium || card.images?.small}
-                            alt={card.name}
-                            style={{
-                              width: 48,
-                              height: 68,
-                              objectFit: "contain",
-                              borderRadius: 6,
-                              background: "#181b1e",
-                              boxShadow: "0 1px 4px #121b1277",
-                              border: "1px solid #242"
-                            }}
-                          />
+                              src={card.images?.large || card.images?.medium || card.images?.small}
+                              alt={card.name}
+                              style={{
+                                width: 140,
+                                height: 140,
+                                objectFit: "contain",
+                                borderRadius: 8,
+                                background: "#181b1e",
+                                boxShadow: "0 1px 8px #121b1277",
+                                border: "1px solid #242"
+                              }}
+                            />
+
                         </td>
                         <td>{card.name}</td>
                         <td>{card.set?.name}</td>

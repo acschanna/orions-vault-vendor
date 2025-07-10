@@ -250,3 +250,29 @@
   max-width: 720px;
   flex: 1 1 600px;
 }
+.trade-lookup-modal-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(10,16,10, 0.88); /* or your existing overlay color */
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.trade-lookup-modal {
+  width: 95vw;
+  height: 95vh;
+  max-width: 900px; /* optional, remove if you want wider */
+  max-height: 95vh;
+  background: #232a23;
+  border-radius: 18px;
+  box-shadow: 0 2px 24px #000b;
+  padding: 24px 16px 16px 16px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}

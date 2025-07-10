@@ -1,226 +1,249 @@
+/* src/cardlookup.css */
+
+/* Color and font variables */
+:root {
+  --accent-green: #00b84a;
+  --bg-black: #111314;
+  --card-dark: #181b1e;
+  --font-family: 'Inter', Arial, Helvetica, sans-serif;
+  --font-white: #ffffff;
+  --font-muted: #aaa;
+}
+
+/* Root and global font */
 .card-lookup-root {
+  padding: 24px;
+  max-width: 1200px;
   margin: 0 auto;
-  max-width: 980px;
-  background: #181b1e;
-  border-radius: 16px;
-  padding: 28px;
-  min-height: 300px;
-  font-family: 'Inter', Arial, Helvetica, sans-serif;
+  font-family: var(--font-family);
+  color: var(--font-white);
+  background: var(--bg-black);
 }
 
+/* Title */
 .card-lookup-title {
-  color: #00b84a;
-  margin-top: 0;
-  font-weight: 700;
-}
-
-.card-lookup-controls {
+  text-align: center;
+  font-size: 28px;
+  font-weight: 800;
   margin-bottom: 16px;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
 }
 
+/* Search controls */
+.card-lookup-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
 .card-lookup-select,
 .card-lookup-input {
-  margin-right: 12px;
-  padding: 7px;
-  border-radius: 4px;
-  border: 1px solid #444;
-  background: #181b1e;
-  color: #fff;
-  min-width: 128px;
-  font-family: 'Inter', Arial, Helvetica, sans-serif;
+  background: var(--card-dark);
+  color: var(--font-white);
+  border: 1px solid #333;
+  border-radius: 7px;
+  padding: 8px 12px;
+  font-size: 14px;
 }
-
+.card-lookup-input {
+  flex: 1 1 200px;
+}
 .card-lookup-button {
-  background: #00b84a;
-  color: #121314;
-  padding: 8px 18px;
+  background: var(--accent-green);
+  color: var(--card-dark);
   border: none;
   border-radius: 7px;
-  font-weight: 700;
-  font-family: 'Inter', Arial, Helvetica, sans-serif;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
-  font-size: 17px;
-  margin-left: 10px;
-  transition: background .15s;
 }
 
+/* Name search results grid */
 .card-lookup-results {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 14px;
-  margin-top: 15px;
-  margin-bottom: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
 }
-
 .card-lookup-card {
-  background: #181b1e;
-  border: 1.5px solid #232;
+  background: var(--card-dark);
   border-radius: 10px;
-  padding: 12px;
-  box-shadow: 0 1px 5px #121b1277;
+  padding: 8px;
   display: flex;
   flex-direction: column;
   align-items: center;
-}
-
-.card-lookup-card-image {
-  width: 90px;
-  margin-bottom: 8px;
-  border-radius: 5px;
-  background: #223;
-}
-
-.card-lookup-card-name {
-  font-weight: 600;
-  font-size: 15px;
   text-align: center;
-  color: #fff;
 }
-
-.card-lookup-card-set {
-  font-size: 13px;
-  color: #00b84a;
-  margin: 2px 0;
+.card-lookup-card-image {
+  width: 100%;
+  border-radius: 8px;
+  margin-bottom: 8px;
 }
-
+.card-lookup-card-name {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.card-lookup-card-set,
 .card-lookup-card-number {
-  font-size: 13px;
-  color: #bfffd7;
+  font-size: 12px;
+  color: var(--font-muted);
 }
-
 .card-lookup-card-viewbtn {
   margin-top: 8px;
-  background: #00b84a;
-  color: #181b1e;
-  padding: 4px 13px;
+  background: var(--accent-green);
+  color: var(--card-dark);
   border: none;
-  border-radius: 6px;
-  font-weight: 700;
+  border-radius: 7px;
+  padding: 6px 12px;
+  font-size: 12px;
   cursor: pointer;
 }
 
+/* Pagination */
+.card-lookup-pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.card-lookup-pagination-btn {
+  background: transparent;
+  color: var(--accent-green);
+  border: 1px solid var(--accent-green);
+  border-radius: 7px;
+  padding: 6px 12px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* Modal backdrop */
 .card-lookup-modal-bg {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(10,25,12,0.96);
-  z-index: 9999;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 1000;
 }
 
+/* Modal container */
 .card-lookup-modal {
-  background: #181b1e;
-  border-radius: 14px;
-  box-shadow: 0 8px 50px #00b84a13;
-  padding: 32px;
-  min-width: 340px;
-  max-width: 420px;
-  position: relative;
-  color: #fff;
-  border: 1.5px solid #00b84a;
-}
-
-.card-lookup-modal-image {
-  width: 88%;
-  max-width: 260px;
+  background: var(--card-dark);
+  border: 2px solid var(--accent-green);
   border-radius: 12px;
-  background: #161b22;
-  margin-bottom: 14px;
-  box-shadow: 0 4px 24px #00b84a11;
+  padding: 24px;
+  width: 90%;
+  max-width: 400px;
+  position: relative;
+  color: var(--font-white);
 }
 
+/* Modal content */
+.card-lookup-modal-image {
+  width: 100%;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
 .card-lookup-modal-title {
-  font-weight: 700;
-  font-size: 22px;
-  margin-bottom: 4px;
-  text-align: center;
-  color: #fff;
-}
-
-.card-lookup-modal-set {
-  text-align: center;
-  color: #00b84a;
+  font-size: 20px;
+  font-weight: 800;
   margin-bottom: 8px;
 }
-
-.card-lookup-modal-rarity {
-  text-align: center;
-  margin-bottom: 8px;
-}
-
+.card-lookup-modal-set,
+.card-lookup-modal-rarity,
 .card-lookup-modal-price {
-  text-align: center;
-  margin-bottom: 8px;
-  color: #00b84a;
+  font-size: 14px;
+  margin-bottom: 6px;
+  color: var(--font-white);
+}
+.card-lookup-modal-rarity b,
+.card-lookup-modal-price b {
+  color: var(--font-white);
 }
 
+/* TCGPlayer link button */
+.tcgplayer-link-btn {
+  display: inline-block;    /* needed so width/height apply */
+  width: 100px;             /* fixed button width */
+  margin: 10px auto;    /* centers under the image */
+  
+  height:50px;             /* fixed button height */
+  border-radius: 12px;      /* adjust for more or less rounding */
+  overflow: hidden;         /* crop image to rounded container */
+}
+
+/* make the square image fill and crop to the 2:1 box */
+.tcgplayer-link-btn img {
+  width: 100%;              /* fill full button width */
+  height: 100%;             /* fill full button height */
+  object-fit: cover;        /* cover the area, cropping as needed */
+}
+.tcgplayer-icon {
+  width: 50px;
+  height: 50;
+}
+
+/* Modal action buttons */
 .card-lookup-modal-btns {
-  text-align: center;
-  margin-bottom: 12px;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 16px;
 }
-
 .card-lookup-add-inv,
 .card-lookup-add-trade {
-  background: #00b84a;
-  color: #181b1e;
-  padding: 8px 20px;
+  background: var(--accent-green);
+  color: var(--card-dark);
   border: none;
   border-radius: 7px;
-  font-weight: 700;
-  font-family: 'Inter', Arial, Helvetica, sans-serif;
+  margin: 5px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
-  font-size: 17px;
-  margin-right: 12px;
 }
 
-.card-lookup-add-trade {
-  background: #198c47;
-  color: #fff;
-}
-
-.card-lookup-cancel-btn {
-  background: #23262a;
-  color: #fff;
-  padding: 9px 22px;
-  border: 1.5px solid #444;
-  border-radius: 7px;
-  font-weight: 700;
-  font-size: 16px;
-  cursor: pointer;
-  font-family: 'Inter', Arial, Helvetica, sans-serif;
-}
-
+/* Inline modal fields */
 .card-lookup-modal-fields {
-  background: #223;
-  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.card-lookup-modal-fields label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--font-white);
+}
+.card-lookup-modal-fields select,
+.card-lookup-modal-fields input {
+  background: var(--bg-black);
+  color: var(--font-white);
+  border: 1px solid #333;
   border-radius: 7px;
-  margin-bottom: 10px;
+  padding: 6px 8px;
+  font-size: 14px;
+  flex: 1;
 }
 
-.card-lookup-pagination {
-  text-align: center;
-  margin-top: 8px;
-}
-
-.card-lookup-pagination-btn {
-  margin: 0 8px;
-  padding: 5px 12px;
-  border-radius: 6px;
-  border: 1px solid #444;
-  background: #181b1e;
-  color: #fff;
+/* Modal cancel/close buttons */
+.card-lookup-cancel-btn {
+  background: transparent;
+  color: var(--accent-green);
+  border: 1px solid var(--accent-green);
+  border-radius: 7px;
+  padding: 6px 12px;
+  font-size: 14px;
   cursor: pointer;
-}
-
-.card-lookup-pagination-btn:disabled {
-  background: #1a1f1b;
-  color: #444;
-  cursor: not-allowed;
+  margin-top: 8px;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
 }
