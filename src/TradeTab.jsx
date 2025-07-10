@@ -828,23 +828,23 @@ export default function TradeTab() {
           <div className="trade-modal">
             <div className="trade-modal-title">Add Card (Manual)</div>
             <input
+              className="trade-modal-input"
               type="text"
               placeholder="Card Name"
               value={manualVendor.name}
               onChange={e => setManualVendor({ ...manualVendor, name: e.target.value })}
-              style={{ width: "90%", padding: 9, marginBottom: 12 }}
             />
             <input
+              className="trade-modal-input"
               type="number"
               placeholder="Market Value"
               value={manualVendor.value}
               onChange={e => setManualVendor({ ...manualVendor, value: e.target.value })}
-              style={{ width: "90%", padding: 9, marginBottom: 12 }}
             />
             <select
+              className="trade-modal-select"
               value={manualVendor.condition}
               onChange={e => setManualVendor({ ...manualVendor, condition: e.target.value })}
-              style={{ width: "90%", padding: 9, marginBottom: 12 }}
             >
               <option value="NM">Near Mint (NM)</option>
               <option value="LP">Light Play (LP)</option>
@@ -858,29 +858,30 @@ export default function TradeTab() {
         </div>
       )}
 
+
       {/* Vendor Sealed Modal */}
       {showVendorSealed && (
         <div className="trade-modal-bg">
           <div className="trade-modal">
             <div className="trade-modal-title">Add Sealed Product</div>
             <input
+              className="trade-modal-input"
               type="text"
               placeholder="Product Name"
               value={manualVendorSealed.productName}
               onChange={e => setManualVendorSealed({ ...manualVendorSealed, productName: e.target.value })}
-              style={{ width: "90%", padding: 9, marginBottom: 10 }}
             />
             <input
+              className="trade-modal-input"
               type="text"
               placeholder="Set Name"
               value={manualVendorSealed.setName}
               onChange={e => setManualVendorSealed({ ...manualVendorSealed, setName: e.target.value })}
-              style={{ width: "90%", padding: 9, marginBottom: 10 }}
             />
             <select
+              className="trade-modal-select"
               value={manualVendorSealed.productType}
               onChange={e => setManualVendorSealed({ ...manualVendorSealed, productType: e.target.value })}
-              style={{ width: "90%", padding: 9, marginBottom: 10 }}
             >
               <option>Booster Box</option>
               <option>Booster Pack</option>
@@ -890,18 +891,18 @@ export default function TradeTab() {
               <option>Other</option>
             </select>
             <input
+              className="trade-modal-input"
               type="number"
               placeholder="Quantity"
               value={manualVendorSealed.quantity}
               onChange={e => setManualVendorSealed({ ...manualVendorSealed, quantity: e.target.value })}
-              style={{ width: "90%", padding: 9, marginBottom: 10 }}
             />
             <input
+              className="trade-modal-input"
               type="number"
               placeholder="Market Value"
               value={manualVendorSealed.value}
               onChange={e => setManualVendorSealed({ ...manualVendorSealed, value: e.target.value })}
-              style={{ width: "90%", padding: 9, marginBottom: 10 }}
             />
             <button className="trade-modal-btn" onClick={addManualVendorSealed}>Add</button>
             <button className="trade-modal-cancel-btn" onClick={() => setShowVendorSealed(false)}>Cancel</button>
@@ -909,29 +910,30 @@ export default function TradeTab() {
         </div>
       )}
 
+
       {/* Customer Manual Modal */}
       {showCustomerManual && (
         <div className="trade-modal-bg">
           <div className="trade-modal">
             <div className="trade-modal-title">Add Card (Manual)</div>
             <input
+              className="trade-modal-input"
               type="text"
               placeholder="Card Name"
               value={manualCustomer.name}
               onChange={e => setManualCustomer({ ...manualCustomer, name: e.target.value })}
-              style={{ width: "90%", padding: 9, marginBottom: 12 }}
             />
             <input
+              className="trade-modal-input"
               type="number"
               placeholder="Market Value"
               value={manualCustomer.value}
               onChange={e => setManualCustomer({ ...manualCustomer, value: e.target.value })}
-              style={{ width: "90%", padding: 9, marginBottom: 12 }}
             />
             <select
+              className="trade-modal-select"
               value={manualCustomer.condition}
               onChange={e => setManualCustomer({ ...manualCustomer, condition: e.target.value })}
-              style={{ width: "90%", padding: 9, marginBottom: 12 }}
             >
               <option value="NM">Near Mint (NM)</option>
               <option value="LP">Light Play (LP)</option>
@@ -945,29 +947,30 @@ export default function TradeTab() {
         </div>
       )}
 
+
       {/* Customer Sealed Modal */}
       {showCustomerSealed && (
         <div className="trade-modal-bg">
           <div className="trade-modal">
             <div className="trade-modal-title">Add Sealed Product</div>
             <input
+              className="trade-modal-input"
               type="text"
               placeholder="Product Name"
               value={manualCustomerSealed.productName}
               onChange={e => setManualCustomerSealed({ ...manualCustomerSealed, productName: e.target.value })}
-              style={{ width: "90%", padding: 9, marginBottom: 10 }}
             />
             <input
+              className="trade-modal-input"
               type="text"
               placeholder="Set Name"
               value={manualCustomerSealed.setName}
               onChange={e => setManualCustomerSealed({ ...manualCustomerSealed, setName: e.target.value })}
-              style={{ width: "90%", padding: 9, marginBottom: 10 }}
             />
             <select
+              className="trade-modal-select"
               value={manualCustomerSealed.productType}
               onChange={e => setManualCustomerSealed({ ...manualCustomerSealed, productType: e.target.value })}
-              style={{ width: "90%", padding: 9, marginBottom: 10 }}
             >
               <option>Booster Box</option>
               <option>Booster Pack</option>
@@ -977,24 +980,25 @@ export default function TradeTab() {
               <option>Other</option>
             </select>
             <input
+              className="trade-modal-input"
               type="number"
               placeholder="Quantity"
               value={manualCustomerSealed.quantity}
               onChange={e => setManualCustomerSealed({ ...manualCustomerSealed, quantity: e.target.value })}
-              style={{ width: "90%", padding: 9, marginBottom: 10 }}
             />
             <input
+              className="trade-modal-input"
               type="number"
               placeholder="Market Value"
               value={manualCustomerSealed.value}
               onChange={e => setManualCustomerSealed({ ...manualCustomerSealed, value: e.target.value })}
-              style={{ width: "90%", padding: 9, marginBottom: 10 }}
             />
             <button className="trade-modal-btn" onClick={addManualCustomerSealed}>Add</button>
             <button className="trade-modal-cancel-btn" onClick={() => setShowCustomerSealed(false)}>Cancel</button>
           </div>
         </div>
       )}
+
 
       {/* Customer Lookup Modal */}
       {showCustomerLookup && (
