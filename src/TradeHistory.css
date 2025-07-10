@@ -149,3 +149,16 @@
   cursor: pointer;
   margin-top: 17px;
 }
+
+
+.th-btn {
+  background: #00b84a;
+  color: #181b1e;
+  border: none;
+  border-radius: 7px;
+  font-weight: 700;
+  padding: 10px 38px;
+  font-size: 17px;
+  cursor: pointer;
+  margin-top: 17px;
+}

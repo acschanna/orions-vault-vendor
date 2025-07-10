@@ -72,6 +72,8 @@ export default function TradeTab() {
   const [customerLookupTotalResults, setCustomerLookupTotalResults] = useState(null);
   const [sets, setSets] = useState([]);
   const [setsLoading, setSetsLoading] = useState(false);
+  const [cardPreview, setCardPreview] = useState(null);
+
 
   useEffect(() => {
     if (!uid) return;
@@ -357,6 +359,43 @@ export default function TradeTab() {
     setCustomerLookupPage(1);
     setCustomerLookupTotalResults(null);
   }
+  
+  function confirmAddCustomerCard(card) {
+    setTrade(prev => ({
+      ...prev,
+      customer: {
+        ...prev.customer,
+        cards: [
+          ...prev.customer.cards,
+          {
+            id: card.id + "_" + Date.now(),
+            cardName: card.name,
+            setName: card.set?.name,
+            cardNumber: card.number,
+            tcgPlayerId: card.id,
+            images: card.images,
+            value:
+              card.tcgplayer?.prices?.normal?.market ??
+              card.tcgplayer?.prices?.holofoil?.market ??
+              card.tcgplayer?.prices?.reverseHolofoil?.market ??
+              0,
+            condition: customerLookupCondition,
+            origin: "lookup"
+          }
+        ]
+      }
+    }));
+    setShowCustomerLookup(false);
+    setCustomerLookupQuery("");
+    setCustomerLookupSet("");
+    setCustomerLookupNumber("");
+    setCustomerLookupResults([]);
+    setCustomerLookupCondition("NM");
+    setCustomerLookupPage(1);
+    setCustomerLookupTotalResults(null);
+    setCardPreview(null);
+  }
+
 
   function clearTrade() {
     setTrade({
@@ -414,9 +453,27 @@ export default function TradeTab() {
       }
     }
 
-    // 2. Add customer cards/sealed to our inventory
-    for (let card of trade.customer.cards) {
-      try {
+    try {
+      // 1. Calculate total acquisition cost paid by vendor (cards, sealed, vendor cash, minus customer cash)
+      const totalVendorAcqCost =
+        trade.vendor.cards.reduce((a, c) => a + Number(c.acquisitionCost || c.value || 0), 0) +
+        trade.vendor.sealed.reduce((a, c) => a + Number(c.acquisitionCost || c.value || 0), 0) +
+        Number(trade.vendor.cash || 0) -
+        Number(trade.customer.cash || 0);
+
+      // 2. Calculate total market value of items being received (customer side, cards & sealed)
+      const totalCustomerMarketValue =
+        trade.customer.cards.reduce((a, c) => a + Number(c.value || 0), 0) +
+        trade.customer.sealed.reduce((a, c) => a + Number(c.value || 0), 0);
+
+      // Avoid divide by zero
+      const safeTotalCustomerMarketValue = totalCustomerMarketValue > 0 ? totalCustomerMarketValue : 1;
+
+      // 3. Assign new acq. cost proportionally for each card
+      for (let card of trade.customer.cards) {
+        const percentOfTrade = Number(card.value || 0) / safeTotalCustomerMarketValue;
+        const acqCost = percentOfTrade * totalVendorAcqCost;
+
         await addDoc(collection(db, "users", uid, "inventory"), {
           type: "card",
           setName: card.setName,
@@ -425,14 +482,17 @@ export default function TradeTab() {
           tcgPlayerId: card.tcgPlayerId,
           images: card.images || undefined,
           marketValue: card.value,
-          acquisitionCost: card.value,
+          acquisitionCost: acqCost, // THIS IS THE SPLIT VALUE!
           condition: card.condition,
           dateAdded: new Date().toISOString(),
         });
-      } catch {}
-    }
-    for (let prod of trade.customer.sealed) {
-      try {
+      }
+
+      // 4. Same for sealed
+      for (let prod of trade.customer.sealed) {
+        const percentOfTrade = Number(prod.value || 0) / safeTotalCustomerMarketValue;
+        const acqCost = percentOfTrade * totalVendorAcqCost;
+
         await addDoc(collection(db, "users", uid, "inventory"), {
           type: "sealed",
           productName: prod.productName,
@@ -440,12 +500,15 @@ export default function TradeTab() {
           productType: prod.productType,
           quantity: prod.quantity,
           marketValue: prod.value,
-          acquisitionCost: prod.value,
+          acquisitionCost: acqCost,
           condition: prod.condition,
           dateAdded: new Date().toISOString(),
         });
-      } catch {}
+      }
+    } catch (err) {
+      console.error("Error adding traded-in inventory:", err);
     }
+
 
     // Subtract/add cash if applicable
     if (trade.vendor.cash > 0 || trade.customer.cash > 0) {
@@ -472,6 +535,7 @@ export default function TradeTab() {
     Number(trade.customer.cash || 0);
 
   return (
+    <>
     <div className="trade-tab-root">
       <h2 className="trade-tab-title">Trade Builder</h2>
       <div className="trade-row">
@@ -947,6 +1011,7 @@ export default function TradeTab() {
             </select>
             {customerSearchType === "name" ? (
               <input
+                className="trade-modal-input"
                 placeholder="Card Name"
                 value={customerLookupQuery}
                 onChange={e => setCustomerLookupQuery(e.target.value)}
@@ -1053,16 +1118,17 @@ export default function TradeTab() {
                           <button
                             className="trade-side-btn"
                             style={{ padding: "3px 10px", fontSize: 14, marginLeft: 0 }}
-                            onClick={() => addCustomerCard(card)}
+                            onClick={() => setCardPreview(card)}
                           >
                             +
                           </button>
+
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-              )}
+ )}
               {customerLookupResults.length === 0 && !customerLookupLoading && (
                 <div style={{ color: "#aaa", marginTop: 12 }}>No cards found.</div>
               )}
@@ -1091,6 +1157,73 @@ export default function TradeTab() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
+    </div>  
+  ({cardPreview && (
+        <div className="trade-lookup-modal-bg">
+          <div className="trade-lookup-modal" style={{ maxWidth: 480, width: "95vw", textAlign: "center" }}>
+            <div style={{ fontSize: 24, fontWeight: "bold", marginBottom: 16 }}>
+              Confirm Add Card
+            </div>
+            <img
+              src={cardPreview.images?.large || cardPreview.images?.medium || cardPreview.images?.small}
+              alt={cardPreview.name}
+              style={{
+                width: 475,
+                height: 700,
+                objectFit: "contain",
+                borderRadius: 12,
+                background: "#181b1e",
+                boxShadow: "0 4px 20px #121b1e77",
+                border: "1.5px solid #242",
+                marginBottom: 18
+              }}
+            />
+            <div style={{ fontSize: 20, fontWeight: 500, marginBottom: 8 }}>{cardPreview.name}</div>
+            <div style={{ color: "#ccc", marginBottom: 6 }}>
+              <b>Set:</b> {cardPreview.set?.name}<br />
+              <b>Card #:</b> {cardPreview.number}
+            </div>
+            <div style={{ color: "#8fff98", fontSize: 20, fontWeight: 600, marginBottom: 14 }}>
+              ${(
+                cardPreview.tcgplayer?.prices?.normal?.market ??
+                cardPreview.tcgplayer?.prices?.holofoil?.market ??
+                cardPreview.tcgplayer?.prices?.reverseHolofoil?.market ??
+                0
+              ).toFixed(2)}
+            </div>
+
+            {cardPreview.tcgplayer?.url && (
+              <a
+                href={cardPreview.tcgplayer.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="tcgplayer-btn"
+                title="view on TCGPlayer"
+              >
+                <img src="/tcgplayer-logo.png" alt="TCGPlayer" />
+              
+              </a>
+            )}
+
+            
+            <div style={{ marginBottom: 12 }}>
+              <button
+                className="trade-modal-btn"
+                style={{ marginRight: 12 }}
+                onClick={() => confirmAddCustomerCard(cardPreview)}
+              >
+                Confirm Add
+              </button>
+              <button
+                className="trade-modal-cancel-btn"
+                onClick={() => setCardPreview(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+    );
+  }

@@ -276,3 +276,104 @@
   display: flex;
   flex-direction: column;
 }
+
+.tcgplayer-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: none;     /* No background */
+  border: none;
+  padding: 0;           /* Remove extra padding */
+  margin-bottom: 14px;
+  border-radius: 10px;
+  box-shadow: none;     /* No shadow unless you want it */
+  cursor: pointer;
+  transition: transform 0.12s, box-shadow 0.12s;
+  outline: none;
+}
+
+.tcgplayer-btn img {
+  display: block;
+  width: 120px;   /* or whatever the real logo width is */
+  height: 40px;   /* or whatever the real logo height is */
+  border-radius: 8px;
+  object-fit: contain;
+  box-shadow: 0 2px 8px #0003;
+  background: #fff;  /* Makes corners white if your logo is transparent */
+  padding: 2px;
+}
+
+.tcgplayer-btn:active,
+.tcgplayer-btn:focus {
+  outline: none;
+  box-shadow: 0 4px 12px #0006;
+}
+
+.trade-lookup-modal input[type="text"],
+.trade-lookup-modal input[type="number"],
+.trade-lookup-modal select {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 17px;
+  border: 1.5px solid #444;
+  border-radius: 8px;
+  background: #444;
+  color: #ffffff;
+  margin-bottom: 14px;
+  outline: none;
+  transition: border 0.16s;
+  box-sizing: border-box;
+}
+.trade-lookup-modal input[type="text"]:focus,
+.trade-lookup-modal input[type="number"]:focus,
+.trade-lookup-modal select:focus {
+  border-color: #47eaff;
+}
+.trade-lookup-modal input[type="text"]::placeholder {
+  color: #777;
+  opacity: 1;
+}
+
+.trade-lookup-modal .trade-modal-btn,
+.trade-lookup-modal .trade-modal-cancel-btn {
+  width: 100%;
+  margin-right: 0;
+  margin-bottom: 8px;
+}
+
+.trade-modal-input {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 17px;
+  border: 1.5px solid #444;
+  border-radius: 8px;
+  background: transparent;
+  color: #222;
+  margin-bottom: 14px;
+  outline: none;
+  transition: border 0.16s;
+  box-sizing: border-box;
+}
+.trade-modal-input:focus {
+  border-color: #47eaff;
+}
+.trade-modal-input::placeholder {
+  color: #789;
+  opacity: 1;
+}
+
+.trade-lookup-modal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;   /* This will center all direct children horizontally */
+  /* Optional for full width fields: */
+  /* width: 100%; */
+}
+
+.trade-lookup-modal input,
+.trade-lookup-modal select,
+.trade-lookup-modal button {
+  display: block;
+  margin: 0 auto 14px auto;   /* Center with auto margins, space below */
+  width: 90%;                 /* Or 100% if you want edge-to-edge */
+}

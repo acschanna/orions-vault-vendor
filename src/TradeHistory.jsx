@@ -1,7 +1,17 @@
 import React, { useEffect, useState } from "react";
 import { useUser } from "./App";
 import { db } from "./firebase";
-import { collection, getDocs, orderBy, query } from "firebase/firestore";
+import {
+  collection,
+  getDocs,
+  orderBy,
+  query,
+  addDoc,
+  setDoc,
+  doc,
+  deleteDoc,
+  getDoc,
+} from "firebase/firestore";
 import "./TradeHistory.css";
 
 const accentGreen = "#00b84a";
@@ -14,6 +24,7 @@ export default function TradeHistory() {
   const [loading, setLoading] = useState(true);
   const [selectedTrade, setSelectedTrade] = useState(null);
   const [exporting, setExporting] = useState(false);
+  const [reversing, setReversing] = useState(false);
 
   useEffect(() => {
     if (!uid) return;
@@ -30,7 +41,6 @@ export default function TradeHistory() {
   // --- CSV Export Function ---
   function exportCSV() {
     setExporting(true);
-    // CSV headers
     const headers = [
       "Date",
       "Vendor Value",
@@ -43,8 +53,8 @@ export default function TradeHistory() {
       "Vendor Cash Type",
       "Customer Cash",
       "Customer Cash Type",
+      "Reversed",
     ];
-    // Map each trade to a row
     const rows = trades.map(trade => [
       trade.date ? new Date(trade.date).toLocaleString() : "",
       Number(trade.valueVendor || 0).toFixed(2),
@@ -64,9 +74,9 @@ export default function TradeHistory() {
       Number(trade.vendor?.cash || 0).toFixed(2),
       trade.vendor?.cashType || "",
       Number(trade.customer?.cash || 0).toFixed(2),
-      trade.customer?.cashType || ""
+      trade.customer?.cashType || "",
+      trade.reversed ? "Yes" : "",
     ]);
-    // Assemble CSV
     const csv = [
       headers.join(","),
       ...rows.map(row =>
@@ -74,7 +84,6 @@ export default function TradeHistory() {
       ),
     ].join("\n");
 
-    // Download
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -84,6 +93,104 @@ export default function TradeHistory() {
     a.click();
     document.body.removeChild(a);
     setExporting(false);
+  }
+
+  // --- Reverse Trade Logic ---
+  async function handleReverseTrade(trade) {
+    if (trade.reversed) return;
+    if (!window.confirm("Are you sure you want to reverse this trade? This action cannot be undone!")) return;
+    setReversing(true);
+
+    try {
+      // 1. Add vendor cards/sealed BACK to inventory (if originally from inventory)
+      for (const card of trade.vendor?.cards || []) {
+        if (card.origin === "inventory" && card.id) {
+          await addDoc(collection(db, "users", uid, "inventory"), {
+            type: "card",
+            setName: card.setName,
+            cardName: card.cardName,
+            cardNumber: card.cardNumber,
+            tcgPlayerId: card.tcgPlayerId,
+            ...(card.images ? { images: card.images } : {}),
+            marketValue: card.value,
+            acquisitionCost: card.acquisitionCost ?? card.value ?? 0,
+            condition: card.condition,
+            dateAdded: new Date().toISOString(),
+          });
+        }
+      }
+      for (const prod of trade.vendor?.sealed || []) {
+        if (prod.origin === "inventory" && prod.id) {
+          await addDoc(collection(db, "users", uid, "inventory"), {
+            type: "sealed",
+            productName: prod.productName,
+            setName: prod.setName,
+            productType: prod.productType,
+            quantity: prod.quantity,
+            ...(prod.images ? { images: prod.images } : {}),
+            marketValue: prod.value,
+            acquisitionCost: prod.acquisitionCost ?? prod.value ?? 0,
+            condition: prod.condition,
+            dateAdded: new Date().toISOString(),
+          });
+        }
+      }
+
+      // 2. Remove customer cards/sealed from inventory (if they were added)
+      const invSnap = await getDocs(collection(db, "users", uid, "inventory"));
+      const inventory = invSnap.docs.map(d => ({ ...d.data(), docId: d.id }));
+
+      for (const card of trade.customer?.cards || []) {
+        const match = inventory.find(i =>
+          i.type === "card" &&
+          i.cardName === card.cardName &&
+          i.setName === card.setName &&
+          i.cardNumber === card.cardNumber &&
+          i.tcgPlayerId === card.tcgPlayerId &&
+          i.condition === card.condition &&
+          Math.abs(Number(i.marketValue) - Number(card.value)) < 0.01
+        );
+        if (match) {
+          await deleteDoc(doc(db, "users", uid, "inventory", match.docId));
+        }
+      }
+      for (const prod of trade.customer?.sealed || []) {
+        const match = inventory.find(i =>
+          i.type === "sealed" &&
+          i.productName === prod.productName &&
+          i.setName === prod.setName &&
+          i.productType === prod.productType &&
+          Number(i.quantity) === Number(prod.quantity) &&
+          Math.abs(Number(i.marketValue) - Number(prod.value)) < 0.01
+        );
+        if (match) {
+          await deleteDoc(doc(db, "users", uid, "inventory", match.docId));
+        }
+      }
+
+      // 3. Adjust cash on hand (reverse the cash transaction)
+      const userSnap = await getDoc(doc(db, "users", uid));
+      const currentCash = Number(userSnap.data()?.cashOnHand || 0);
+      const newCash =
+        currentCash +
+        Number(trade.vendor?.cash || 0) -
+        Number(trade.customer?.cash || 0);
+      await setDoc(doc(db, "users", uid), { cashOnHand: newCash }, { merge: true });
+
+      // 4. Mark the trade as reversed in tradeHistory
+      await setDoc(
+        doc(db, "users", uid, "tradeHistory", trade.id),
+        { reversed: true, reversedDate: new Date().toISOString() },
+        { merge: true }
+      );
+
+      setSelectedTrade({ ...trade, reversed: true, reversedDate: new Date().toISOString() });
+      setTrades(trades.map(t => (t.id === trade.id ? { ...t, reversed: true } : t)));
+      alert("Trade reversed and inventory/cash restored.");
+    } catch (err) {
+      alert("Error reversing trade: " + err.message);
+    }
+    setReversing(false);
   }
 
   return (
@@ -111,6 +218,7 @@ export default function TradeHistory() {
               <th>Vendor Value</th>
               <th>Customer Value</th>
               <th>Details</th>
+              <th>Reversed</th>
             </tr>
           </thead>
           <tbody>
@@ -127,6 +235,9 @@ export default function TradeHistory() {
                 </td>
                 <td>
                   <button className="th-btn" onClick={() => setSelectedTrade(trade)}>View</button>
+                </td>
+                <td style={{ color: trade.reversed ? "#f4453c" : "#00b84a", fontWeight: "bold" }}>
+                  {trade.reversed ? "Yes" : ""}
                 </td>
               </tr>
             ))}
@@ -148,6 +259,11 @@ export default function TradeHistory() {
             <div style={{ color: "#b5dfff", marginBottom: 8, fontWeight: 700 }}>
               Customer Value: ${Number(selectedTrade.valueCustomer || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
             </div>
+            {selectedTrade.reversed && (
+              <div style={{ color: "#f4453c", fontWeight: 700, marginBottom: 12 }}>
+                Trade has been reversed{selectedTrade.reversedDate ? " (" + new Date(selectedTrade.reversedDate).toLocaleString() + ")" : ""}.
+              </div>
+            )}
 
             <div className="trade-history-modal-section-title">Vendor Cards</div>
             {selectedTrade.vendor?.cards?.length > 0 ? (
@@ -270,10 +386,30 @@ export default function TradeHistory() {
                 Customer Cash: ${Number(selectedTrade.customer?.cash || 0).toFixed(2)} ({selectedTrade.customer?.cashType || "cash"})
               </span>
             </div>
-
-            <button className="trade-history-modal-btn" onClick={() => setSelectedTrade(null)}>
-              Close
-            </button>
+            <div style={{ marginTop: 24 }}>
+              <button
+                className="trade-history-modal-btn"
+                onClick={() => setSelectedTrade(null)}
+                disabled={reversing}
+                style={{ marginRight: 14 }}
+              >
+                Close
+              </button>
+              <button
+                className="trade-history-modal-btn"
+                style={{
+                  background: "#f4453c",
+                  color: "#fff",
+                  marginLeft: 0,
+                  opacity: selectedTrade.reversed || reversing ? 0.6 : 1,
+                  cursor: selectedTrade.reversed || reversing ? "not-allowed" : "pointer",
+                }}
+                disabled={selectedTrade.reversed || reversing}
+                onClick={() => handleReverseTrade(selectedTrade)}
+              >
+                {reversing ? "Reversing..." : selectedTrade.reversed ? "Trade Reversed" : "Reverse Trade"}
+              </button>
+            </div>
           </div>
         </div>
       )}
