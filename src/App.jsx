@@ -183,6 +183,7 @@ function App() {
   const [firebaseUser, setFirebaseUser] = useState(null);
   const [tab, setTab] = useState("dashboard");
   const [loading, setLoading] = useState(true);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Dashboard state
   const [inventory, setInventory] = useState([]);
@@ -343,6 +344,24 @@ function App() {
     Cash: log.cash
   }));
 
+  // Responsive: detect mobile with window width
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  // Navigation Tab List
+  const NAV_TABS = [
+    { label: "Dashboard", id: "dashboard" },
+    { label: "Trade", id: "trade" },
+    { label: "Inventory", id: "inventory" },
+    { label: "Card Lookup", id: "lookup" },
+    { label: "Trade History", id: "history" },
+    { label: "Show History", id: "shows" }
+  ];
+
   if (!firebaseUser) {
     return <LoginScreen />;
   }
@@ -387,14 +406,45 @@ function App() {
             </div>
 
             {/* Navigation Tabs */}
-            <div className="tabs">
-              <button className={`tab-btn${tab === "dashboard" ? " active" : ""}`} onClick={() => setTab("dashboard")}>Dashboard</button>
-              <button className={`tab-btn${tab === "trade" ? " active" : ""}`} onClick={() => setTab("trade")}>Trade</button>
-              <button className={`tab-btn${tab === "inventory" ? " active" : ""}`} onClick={() => setTab("inventory")}>Inventory</button>
-              <button className={`tab-btn${tab === "lookup" ? " active" : ""}`} onClick={() => setTab("lookup")}>Card Lookup</button>
-              <button className={`tab-btn${tab === "history" ? " active" : ""}`} onClick={() => setTab("history")}>Trade History</button>
-              <button className={`tab-btn${tab === "shows" ? " active" : ""}`} onClick={() => setTab("shows")}>Show History</button>
-            </div>
+            {!isMobile ? (
+              <div className="tabs">
+                {NAV_TABS.map(tabInfo => (
+                  <button
+                    key={tabInfo.id}
+                    className={`tab-btn${tab === tabInfo.id ? " active" : ""}`}
+                    onClick={() => setTab(tabInfo.id)}
+                  >
+                    {tabInfo.label}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="mobile-nav">
+                <button
+                  className="burger-btn"
+                  aria-label="Open navigation menu"
+                  onClick={() => setMobileMenuOpen(m => !m)}
+                >
+                  <span className="burger-icon" />
+                </button>
+                {mobileMenuOpen && (
+                  <div className="mobile-dropdown">
+                    {NAV_TABS.map(tabInfo => (
+                      <button
+                        key={tabInfo.id}
+                        className={`mobile-dropdown-item${tab === tabInfo.id ? " active" : ""}`}
+                        onClick={() => {
+                          setTab(tabInfo.id);
+                          setMobileMenuOpen(false);
+                        }}
+                      >
+                        {tabInfo.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Dashboard Graph and Widgets */}
             {tab === "dashboard" && (

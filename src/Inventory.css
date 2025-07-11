@@ -164,3 +164,112 @@
   color: #fff;
   border: 1px solid #555;
 }
+
+/* Modal for card details */
+.card-modal-backdrop {
+  position: fixed;
+  z-index: 1200;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(18,20,22,0.81);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadein 0.12s;
+}
+@keyframes fadein {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.card-modal {
+  background: #181b1e;
+  border-radius: 14px;
+  max-width: 480px;    /* was 380px */
+  min-width: 220px;
+  width: 99vw;
+  max-height: 92vh;    /* was 90vh */
+  overflow-y: auto;
+  box-shadow: 0 4px 32px #00391199;
+  padding: 32px 18px 22px 18px; /* add some extra space */
+  position: relative;
+  outline: none;
+}
+
+.card-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.card-modal-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #00b84a;
+}
+.card-modal-set {
+  font-size: 15px;
+  color: #86e6ff;
+  margin-left: 8px;
+}
+.card-modal-close {
+  background: none;
+  border: none;
+  color: #00b84a;
+  font-size: 26px;
+  font-weight: 700;
+  cursor: pointer;
+  line-height: 1;
+  padding: 2px 7px;
+  border-radius: 50%;
+  transition: background 0.15s;
+}
+.card-modal-close:hover, .card-modal-close:focus {
+  background: #193;
+  color: #fff;
+}
+.card-modal-body {
+  font-size: 16px;
+}
+.card-modal-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0;
+}
+.card-modal-table td {
+  padding: 6px 6px 3px 0;
+  border: none;
+  color: #fff;
+}
+.card-modal-img {
+  width: auto;
+  max-width: 360px;
+  max-height: 540px;
+  border-radius: 9px;
+  box-shadow: 0 2px 14px #00223333;
+  margin-bottom: 8px;
+  background: #242;
+}
+.card-name-link {
+  cursor: pointer;
+  color: #00b84a;
+  text-decoration: underline;
+  transition: color 0.14s;
+}
+.card-name-link:hover, .card-name-link:focus {
+  color: #3fffa6;
+  outline: none;
+}
+.card-row:hover > .card-name .card-name-link {
+  color: #3fffa6;
+}
+
+.card-modal-img-large {
+  width: auto;
+  max-width: 100%;
+  max-height: 720px; /* 10% larger than 330px */
+  border-radius: 14px;
+  box-shadow: 0 2px 22px #00183399;
+  background: #1a2c1a;
+  margin-bottom: 12px;
+  margin-top: 2px;
+}
