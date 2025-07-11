@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext } from "react";
 import { useUser } from "./App";
-import { db } from "./firebase";
+import { db, storage } from "./firebase";
 import {
   collection,
   doc,
@@ -10,8 +10,38 @@ import {
   addDoc,
   deleteDoc,
 } from "firebase/firestore";
+import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { ShowContext } from "./ShowContext";
 import "./TradeTab.css";
+
+const CATEGORY_OPTIONS = [
+  "Cards",
+  "Graded Cards",
+  "Sealed Product",
+  "Supplies",
+  "Accessories",
+  "Other"
+];
+const EDITION_OPTIONS = ["1st Edition", "Unlimited", "Shadowless"];
+const GRADING_COMPANIES = [
+  "",
+  "PSA",
+  "BGS",
+  "CGC",
+  "SGC",
+  "Other"
+];
+const CONDITION_OPTIONS = [
+  "Gem Mint",
+  "Mint",
+  "Near Mint",
+  "Light Play",
+  "Moderate Play",
+  "Heavy Play",
+  "Damaged",
+  "Authentic",
+  "Other"
+];
 
 const accentGreen = "#00b84a";
 const API_KEY = import.meta.env.VITE_POKEMON_TCG_API_KEY;
@@ -32,53 +62,384 @@ function cardHasEditionOptions(card) {
   );
 }
 
+function ManualAddModal({ onClose, onSave, side }) {
+  const [cardName, setCardName] = useState("");
+  const [category, setCategory] = useState("Cards");
+  const [gradingCompany, setGradingCompany] = useState("");
+  const [grade, setGrade] = useState("");
+  const [setName, setSetName] = useState("");
+  const [cardNumber, setCardNumber] = useState("");
+  const [condition, setCondition] = useState("Near Mint");
+  const [edition, setEdition] = useState("");
+  const [marketValue, setMarketValue] = useState("");
+  const [acquisitionCost, setAcquisitionCost] = useState("");
+  const [quantity, setQuantity] = useState(1);
+  const [productType, setProductType] = useState("Booster Box");
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [uploading, setUploading] = useState(false);
+
+  useEffect(() => {
+    if (!imageFile) {
+      setImagePreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(imageFile);
+    setImagePreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [imageFile]);
+
+  function isSealed() {
+    return category === "Sealed Product";
+  }
+  function isGraded() {
+    return category === "Graded Cards";
+  }
+
+  async function handleSave() {
+    if (!cardName || !category) {
+      alert("Please enter at least a name and category.");
+      return;
+    }
+    let manualImageUrl = "";
+    setUploading(true);
+    if (imageFile) {
+      try {
+        const fileRef = storageRef(
+          storage,
+          `manual-inventory-images/${Date.now()}_${imageFile.name.replace(/[^a-zA-Z0-9.]/g, "_")}`
+        );
+        await uploadBytes(fileRef, imageFile);
+        manualImageUrl = await getDownloadURL(fileRef);
+      } catch {
+        alert("Failed to upload image. Try again.");
+        setUploading(false);
+        return;
+      }
+    }
+    if (!isSealed()) {
+      onSave({
+        id: "manual_" + Date.now(),
+        cardName,
+        category,
+        gradingCompany: isGraded() ? gradingCompany : "",
+        grade: isGraded() ? grade : "",
+        setName,
+        cardNumber,
+        condition,
+        edition,
+        marketValue: Number(marketValue) || 0,
+        acquisitionCost: Number(acquisitionCost) || 0,
+        quantity: Number(quantity) || 1,
+        manualImageUrl,
+        type: "card"
+      });
+    } else {
+      onSave({
+        id: "sealed_manual_" + Date.now(),
+        productName: cardName,
+        setName,
+        productType,
+        quantity: Number(quantity) || 1,
+        marketValue: Number(marketValue) || 0,
+        acquisitionCost: Number(acquisitionCost) || 0,
+        condition,
+        manualImageUrl,
+        category,
+        type: "sealed"
+      });
+    }
+    setUploading(false);
+    onClose();
+  }
+
+  return (
+    <div className="card-modal-backdrop" onClick={onClose}>
+      <div
+        className="card-modal"
+        tabIndex={-1}
+        onClick={e => e.stopPropagation()}
+        aria-modal="true"
+        role="dialog"
+        style={{ maxWidth: 500 }}
+      >
+        <div className="card-modal-header">
+          <div className="card-modal-title">Manual Add ({side === "vendor" ? "Vendor" : "Customer"})</div>
+          <button className="card-modal-close" onClick={onClose} aria-label="Close">&times;</button>
+        </div>
+        <div className="card-modal-body" style={{ padding: 20 }}>
+          <div style={{ marginBottom: 12 }}>
+            <label>
+              Photo:{" "}
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={e => {
+                  if (e.target.files && e.target.files[0]) setImageFile(e.target.files[0]);
+                }}
+                style={{ marginLeft: 10 }}
+              />
+            </label>
+            {imagePreview && (
+              <div style={{ marginTop: 8 }}>
+                <img
+                  src={imagePreview}
+                  alt="Preview"
+                  style={{ maxWidth: 140, maxHeight: 120, borderRadius: 10, border: "1px solid #888" }}
+                />
+              </div>
+            )}
+          </div>
+          <label style={{ display: "block", marginBottom: 9 }}>
+            {isSealed() ? "Product Name:" : "Name:"}
+            <input
+              className="inventory-input"
+              style={{ marginLeft: 8, width: "75%" }}
+              value={cardName}
+              onChange={e => setCardName(e.target.value)}
+            />
+          </label>
+          <label style={{ display: "block", marginBottom: 9 }}>
+            Category:
+            <select
+              className="inventory-filter-select"
+              style={{ marginLeft: 8, width: "70%" }}
+              value={category}
+              onChange={e => setCategory(e.target.value)}
+            >
+              {CATEGORY_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+            </select>
+          </label>
+          {isSealed() ? (
+            <>
+              <label style={{ display: "block", marginBottom: 9 }}>
+                Set Name:
+                <input
+                  className="inventory-input"
+                  style={{ marginLeft: 8, width: "75%" }}
+                  value={setName}
+                  onChange={e => setSetName(e.target.value)}
+                  placeholder="(Optional)"
+                />
+              </label>
+              <label style={{ display: "block", marginBottom: 9 }}>
+                Product Type:
+                <select
+                  className="inventory-filter-select"
+                  style={{ marginLeft: 8, width: "60%" }}
+                  value={productType}
+                  onChange={e => setProductType(e.target.value)}
+                >
+                  <option>Booster Box</option>
+                  <option>Booster Pack</option>
+                  <option>ETB</option>
+                  <option>Tin</option>
+                  <option>Deck</option>
+                  <option>Other</option>
+                </select>
+              </label>
+              <label style={{ display: "block", marginBottom: 9 }}>
+                Condition:
+                <select
+                  className="inventory-filter-select"
+                  style={{ marginLeft: 8, width: "60%" }}
+                  value={condition}
+                  onChange={e => setCondition(e.target.value)}
+                >
+                  <option>Sealed</option>
+                  <option>Damaged</option>
+                </select>
+              </label>
+              <label style={{ display: "block", marginBottom: 9 }}>
+                Quantity:
+                <input
+                  className="inventory-input"
+                  style={{ marginLeft: 8, width: "20%" }}
+                  type="number"
+                  min="1"
+                  value={quantity}
+                  onChange={e => setQuantity(e.target.value)}
+                />
+              </label>
+              <label style={{ display: "block", marginBottom: 9 }}>
+                Market Value ($):
+                <input
+                  className="inventory-input"
+                  style={{ marginLeft: 8, width: "35%" }}
+                  type="number"
+                  step="0.01"
+                  value={marketValue}
+                  onChange={e => setMarketValue(e.target.value)}
+                  placeholder="0.00"
+                />
+              </label>
+              <label style={{ display: "block", marginBottom: 9 }}>
+                Acquisition Cost ($):
+                <input
+                  className="inventory-input"
+                  style={{ marginLeft: 8, width: "35%" }}
+                  type="number"
+                  step="0.01"
+                  value={acquisitionCost}
+                  onChange={e => setAcquisitionCost(e.target.value)}
+                  placeholder="0.00"
+                />
+              </label>
+            </>
+          ) : (
+            <>
+              {isGraded() && (
+                <>
+                  <label style={{ display: "block", marginBottom: 9 }}>
+                    Grading Company:
+                    <select
+                      className="inventory-filter-select"
+                      style={{ marginLeft: 8, width: "70%" }}
+                      value={gradingCompany}
+                      onChange={e => setGradingCompany(e.target.value)}
+                    >
+                      {GRADING_COMPANIES.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                    </select>
+                  </label>
+                  <label style={{ display: "block", marginBottom: 9 }}>
+                    Grade:
+                    <input
+                      className="inventory-input"
+                      style={{ marginLeft: 8, width: "50%" }}
+                      value={grade}
+                      onChange={e => setGrade(e.target.value)}
+                      placeholder="e.g. 10, 9.5, Authentic"
+                    />
+                  </label>
+                </>
+              )}
+              <label style={{ display: "block", marginBottom: 9 }}>
+                Set Name:
+                <input
+                  className="inventory-input"
+                  style={{ marginLeft: 8, width: "75%" }}
+                  value={setName}
+                  onChange={e => setSetName(e.target.value)}
+                  placeholder="(Optional)"
+                />
+              </label>
+              <label style={{ display: "block", marginBottom: 9 }}>
+                Card Number:
+                <input
+                  className="inventory-input"
+                  style={{ marginLeft: 8, width: "50%" }}
+                  value={cardNumber}
+                  onChange={e => setCardNumber(e.target.value)}
+                  placeholder="(Optional)"
+                />
+              </label>
+              <label style={{ display: "block", marginBottom: 9 }}>
+                Condition:
+                <select
+                  className="inventory-filter-select"
+                  style={{ marginLeft: 8, width: "60%" }}
+                  value={condition}
+                  onChange={e => setCondition(e.target.value)}
+                >
+                  {CONDITION_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                </select>
+              </label>
+              <label style={{ display: "block", marginBottom: 9 }}>
+                Edition:
+                <select
+                  className="inventory-filter-select"
+                  style={{ marginLeft: 8, width: "50%" }}
+                  value={edition}
+                  onChange={e => setEdition(e.target.value)}
+                >
+                  <option value="">—</option>
+                  {EDITION_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                </select>
+              </label>
+              <label style={{ display: "block", marginBottom: 9 }}>
+                Market Value ($):
+                <input
+                  className="inventory-input"
+                  style={{ marginLeft: 8, width: "35%" }}
+                  type="number"
+                  step="0.01"
+                  value={marketValue}
+                  onChange={e => setMarketValue(e.target.value)}
+                  placeholder="0.00"
+                />
+              </label>
+              <label style={{ display: "block", marginBottom: 9 }}>
+                Acquisition Cost ($):
+                <input
+                  className="inventory-input"
+                  style={{ marginLeft: 8, width: "35%" }}
+                  type="number"
+                  step="0.01"
+                  value={acquisitionCost}
+                  onChange={e => setAcquisitionCost(e.target.value)}
+                  placeholder="0.00"
+                />
+              </label>
+              <label style={{ display: "block", marginBottom: 9 }}>
+                Quantity:
+                <input
+                  className="inventory-input"
+                  style={{ marginLeft: 8, width: "20%" }}
+                  type="number"
+                  min="1"
+                  value={quantity}
+                  onChange={e => setQuantity(e.target.value)}
+                />
+              </label>
+            </>
+          )}
+          <button
+            className="inventory-action-btn"
+            style={{ marginTop: 10, width: 120, background: "#008afc", color: "#fff" }}
+            onClick={handleSave}
+            disabled={uploading}
+          >
+            {uploading ? "Saving..." : "Save"}
+          </button>
+          <button
+            className="inventory-action-btn secondary"
+            style={{ marginTop: 10, marginLeft: 10, width: 90 }}
+            onClick={onClose}
+            disabled={uploading}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function TradeTab() {
   const user = useUser();
   const uid = user?.uid;
-
-  // Import showActive from ShowContext
   const { showActive } = useContext(ShowContext);
 
-  // Trade state
   const [trade, setTrade] = useState({
     vendor: { cards: [], sealed: [], cash: 0, cashType: "cash" },
     customer: { cards: [], sealed: [], cash: 0, cashType: "cash" }
   });
 
-  // Confirm modal state
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmError, setConfirmError] = useState("");
 
-  // Vendor manual add
-  const [showVendorManual, setShowVendorManual] = useState(false);
-  const [manualVendor, setManualVendor] = useState({ name: "", value: "", condition: "NM" });
+  const [showVendorManualAdd, setShowVendorManualAdd] = useState(false);
+  const [showCustomerManualAdd, setShowCustomerManualAdd] = useState(false);
 
-  // Vendor sealed add
-  const [showVendorSealed, setShowVendorSealed] = useState(false);
-  const [manualVendorSealed, setManualVendorSealed] = useState({
-    productName: "", setName: "", productType: "Booster Box", quantity: 1, value: "", condition: "Sealed"
-  });
-
-  // Vendor inventory search
   const [vendorSearch, setVendorSearch] = useState("");
   const [vendorSearchResults, setVendorSearchResults] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [inventoryLoading, setInventoryLoading] = useState(true);
 
-  // Vendor cash
   const [cashOnHand, setCashOnHand] = useState(0);
 
-  // Customer manual add
-  const [showCustomerManual, setShowCustomerManual] = useState(false);
-  const [manualCustomer, setManualCustomer] = useState({ name: "", value: "", condition: "NM" });
-
-  // Customer sealed add
-  const [showCustomerSealed, setShowCustomerSealed] = useState(false);
-  const [manualCustomerSealed, setManualCustomerSealed] = useState({
-    productName: "", setName: "", productType: "Booster Box", quantity: 1, value: "", condition: "Sealed"
-  });
-
-  // --- CardLookup-Style Customer Card Lookup State ---
+  // ----------- CardLookup Style Customer Card Lookup -----------
   const [showCustomerLookup, setShowCustomerLookup] = useState(false);
   const [lookupType, setLookupType] = useState("name");
   const [lookupName, setLookupName] = useState("");
@@ -96,14 +457,9 @@ export default function TradeTab() {
   const [lookupTotalCount, setLookupTotalCount] = useState(0);
   const LOOKUP_PAGE_SIZE = 8;
 
-  // Set list for set total lookup (load only once)
   const [sets, setSets] = useState([]);
   const [setsLoading, setSetsLoading] = useState(false);
 
-  // Card preview (for + button, as before)
-  const [cardPreview, setCardPreview] = useState(null);
-
-  // Fetch user inventory and cash
   useEffect(() => {
     if (!uid) return;
     async function fetchAll() {
@@ -118,7 +474,6 @@ export default function TradeTab() {
     fetchAll();
   }, [uid]);
 
-  // Vendor inventory search results
   useEffect(() => {
     if (!vendorSearch) {
       setVendorSearchResults([]);
@@ -135,7 +490,6 @@ export default function TradeTab() {
     );
   }, [vendorSearch, inventory, trade.vendor.cards, trade.vendor.sealed]);
 
-  // Vendor handlers
   function addVendorFromInventory(id) {
     const item = inventory.find(c => c.id === id);
     if (!item) return;
@@ -153,49 +507,7 @@ export default function TradeTab() {
         }
       }));
     }
-    setVendorSearch(""); // Clear search
-  }
-  function addManualVendorCard() {
-    if (!manualVendor.name || !manualVendor.value || isNaN(manualVendor.value)) return;
-    setTrade(prev => ({
-      ...prev,
-      vendor: {
-        ...prev.vendor,
-        cards: [
-          ...prev.vendor.cards,
-          {
-            id: "manual_" + Date.now(),
-            cardName: manualVendor.name,
-            condition: manualVendor.condition,
-            value: Number(manualVendor.value),
-            origin: "manual"
-          }
-        ]
-      }
-    }));
-    setManualVendor({ name: "", value: "", condition: "NM" });
-    setShowVendorManual(false);
-  }
-  function addManualVendorSealed() {
-    if (!manualVendorSealed.productName || !manualVendorSealed.value || isNaN(manualVendorSealed.value)) return;
-    setTrade(prev => ({
-      ...prev,
-      vendor: {
-        ...prev.vendor,
-        sealed: [
-          ...prev.vendor.sealed,
-          {
-            id: "sealed_manual_" + Date.now(),
-            ...manualVendorSealed,
-            value: Number(manualVendorSealed.value),
-            origin: "manual",
-            type: "sealed"
-          }
-        ]
-      }
-    }));
-    setManualVendorSealed({ productName: "", setName: "", productType: "Booster Box", quantity: 1, value: "", condition: "Sealed" });
-    setShowVendorSealed(false);
+    setVendorSearch("");
   }
   function removeVendorCard(id) {
     setTrade(prev => ({
@@ -234,50 +546,26 @@ export default function TradeTab() {
       }
     }));
   }
+  function handleVendorManualAddSave(item) {
+    if (item.type === "sealed") {
+      setTrade(prev => ({
+        ...prev,
+        vendor: {
+          ...prev.vendor,
+          sealed: [...prev.vendor.sealed, item]
+        }
+      }));
+    } else {
+      setTrade(prev => ({
+        ...prev,
+        vendor: {
+          ...prev.vendor,
+          cards: [...prev.vendor.cards, item]
+        }
+      }));
+    }
+  }
 
-  // Customer handlers
-  function addManualCustomerCard() {
-    if (!manualCustomer.name || !manualCustomer.value || isNaN(manualCustomer.value)) return;
-    setTrade(prev => ({
-      ...prev,
-      customer: {
-        ...prev.customer,
-        cards: [
-          ...prev.customer.cards,
-          {
-            id: "manual_" + Date.now(),
-            cardName: manualCustomer.name,
-            condition: manualCustomer.condition,
-            value: Number(manualCustomer.value),
-            origin: "manual"
-          }
-        ]
-      }
-    }));
-    setManualCustomer({ name: "", value: "", condition: "NM" });
-    setShowCustomerManual(false);
-  }
-  function addManualCustomerSealed() {
-    if (!manualCustomerSealed.productName || !manualCustomerSealed.value || isNaN(manualCustomerSealed.value)) return;
-    setTrade(prev => ({
-      ...prev,
-      customer: {
-        ...prev.customer,
-        sealed: [
-          ...prev.customer.sealed,
-          {
-            id: "sealed_manual_" + Date.now(),
-            ...manualCustomerSealed,
-            value: Number(manualCustomerSealed.value),
-            origin: "manual",
-            type: "sealed"
-          }
-        ]
-      }
-    }));
-    setManualCustomerSealed({ productName: "", setName: "", productType: "Booster Box", quantity: 1, value: "", condition: "Sealed" });
-    setShowCustomerSealed(false);
-  }
   function removeCustomerCard(id) {
     setTrade(prev => ({
       ...prev,
@@ -315,10 +603,26 @@ export default function TradeTab() {
       }
     }));
   }
+  function handleCustomerManualAddSave(item) {
+    if (item.type === "sealed") {
+      setTrade(prev => ({
+        ...prev,
+        customer: {
+          ...prev.customer,
+          sealed: [...prev.customer.sealed, item]
+        }
+      }));
+    } else {
+      setTrade(prev => ({
+        ...prev,
+        customer: {
+          ...prev.customer,
+          cards: [...prev.customer.cards, item]
+        }
+      }));
+    }
+  }
 
-  // ----------- CardLookup Style Customer Card Lookup ------------
-
-  // Load sets once if needed
   useEffect(() => {
     if (!showCustomerLookup) return;
     if (sets.length > 0) return;
@@ -330,10 +634,8 @@ export default function TradeTab() {
       .then(data => setSets(data.data.sort((a, b) => (b.releaseDate > a.releaseDate ? 1 : -1))))
       .catch(() => setSets([]))
       .finally(() => setSetsLoading(false));
-  // eslint-disable-next-line
   }, [showCustomerLookup]);
 
-  // Core lookup logic
   const doLookup = async (curPage = 1) => {
     setLookupLoading(true);
     setLookupResults([]);
@@ -389,7 +691,6 @@ export default function TradeTab() {
       try {
         const response = await fetch(url, { headers: { "X-Api-Key": API_KEY } });
         const data = await response.json();
-        // Now filter locally for set.printedTotal
         const filtered = (data.data || []).filter(card =>
           card.set && String(card.set.printedTotal) === String(lookupSetTotal)
         );
@@ -405,7 +706,6 @@ export default function TradeTab() {
     }
   };
 
-  // Local paging for number/numberSetTotal search
   useEffect(() => {
     if (
       (lookupType === "number" && allNumberResults.length > 0) ||
@@ -414,10 +714,8 @@ export default function TradeTab() {
       setLookupResults(allNumberResults.slice((lookupPage - 1) * LOOKUP_PAGE_SIZE, lookupPage * LOOKUP_PAGE_SIZE));
       setLookupTotalCount(allNumberResults.length);
     }
-    // eslint-disable-next-line
-  }, [lookupPage, allNumberResults]);
+  }, [lookupPage, allNumberResults, lookupType]);
 
-  // Reset search on input change
   useEffect(() => {
     setLookupPage(1);
     setLookupResults([]);
@@ -425,7 +723,6 @@ export default function TradeTab() {
     setLookupShowModal(false);
     setLookupTotalCount(0);
     setAllNumberResults([]);
-    // eslint-disable-next-line
   }, [lookupType, lookupName, lookupNumber, lookupSetTotal]);
 
   const nextLookupPage = () => {
@@ -441,7 +738,6 @@ export default function TradeTab() {
     }
   };
 
-  // Add found card to trade
   function addCustomerLookupCard(card) {
     let price =
       cardHasEditionOptions(card) && lookupEdition === "firstEdition"
@@ -497,7 +793,6 @@ export default function TradeTab() {
     setConfirmError("");
   }
 
-  // Confirm trade: customer adds get added, vendor inventory removals
   async function confirmTrade() {
     if (!uid) return;
     setConfirmError("");
@@ -518,7 +813,6 @@ export default function TradeTab() {
       return;
     }
 
-    // ---- Save to Firestore trade history, INCLUDING showId if showActive ----
     const tradeRecord = {
       ...trade,
       date: new Date().toISOString(),
@@ -531,7 +825,6 @@ export default function TradeTab() {
     const historyRef = collection(db, "users", uid, "tradeHistory");
     await setDoc(doc(historyRef), tradeRecord);
 
-    // Vendor inventory removals
     for (let c of trade.vendor.cards) {
       if (c.origin === "inventory" && c.id) {
         try { await deleteDoc(doc(db, "users", uid, "inventory", c.id)); } catch {}
@@ -620,12 +913,16 @@ export default function TradeTab() {
       <div className="trade-tab-root">
         <h2 className="trade-tab-title">Trade Builder</h2>
         <div className="trade-row">
-          {/* -------- Vendor Side -------- */}
           <div className="trade-side vendor-side-box">
             <div className="trade-side-title">Your Side (Vendor)</div>
             <div className="trade-side-controls">
-              <button className="trade-side-btn" onClick={() => setShowVendorManual(true)}>Add Card (Manual)</button>
-              <button className="trade-side-btn sealed" onClick={() => setShowVendorSealed(true)}>Add Sealed Product</button>
+              <button
+                className="trade-side-btn"
+                style={{ background: "#008afc", color: "#fff" }}
+                onClick={() => setShowVendorManualAdd(true)}
+              >
+                + Manual Add
+              </button>
               <button className="trade-side-btn cancel" onClick={clearTrade}>Clear Trade</button>
             </div>
             <div style={{ marginBottom: 12 }}>
@@ -700,7 +997,7 @@ export default function TradeTab() {
                       <td className="item-name">{card.cardName}</td>
                       <td className="item-details">{card.setName || ""}</td>
                       <td>{card.cardNumber || ""}</td>
-                      <td className="item-value">${Number(card.value || 0).toFixed(2)}</td>
+                      <td className="item-value">${Number(card.value || card.marketValue || 0).toFixed(2)}</td>
                       <td className="item-cond">{card.condition}</td>
                       <td>
                         <button
@@ -717,7 +1014,7 @@ export default function TradeTab() {
                       <td className="sealed-name">{prod.productName}</td>
                       <td className="sealed-details">{prod.productType || ""}</td>
                       <td>{prod.quantity || ""}</td>
-                      <td className="item-value">${Number(prod.value || 0).toFixed(2)}</td>
+                      <td className="item-value">${Number(prod.value || prod.marketValue || 0).toFixed(2)}</td>
                       <td className="item-cond">{prod.condition}</td>
                       <td>
                         <button
@@ -761,13 +1058,16 @@ export default function TradeTab() {
               </span>
             </div>
           </div>
-
-          {/* -------- Customer Side -------- */}
           <div className="trade-side vendor-side-box">
             <div className="trade-side-title">Customer Side</div>
             <div className="trade-side-controls">
-              <button className="trade-side-btn" onClick={() => setShowCustomerManual(true)}>Add Card (Manual)</button>
-              <button className="trade-side-btn sealed" onClick={() => setShowCustomerSealed(true)}>Add Sealed Product</button>
+              <button
+                className="trade-side-btn"
+                style={{ background: "#008afc", color: "#fff" }}
+                onClick={() => setShowCustomerManualAdd(true)}
+              >
+                + Manual Add
+              </button>
               <button className="trade-side-btn" style={{ background: "#198c47" }} onClick={() => setShowCustomerLookup(true)}>
                 Lookup Pokémon Card
               </button>
@@ -790,7 +1090,7 @@ export default function TradeTab() {
                       <td className="item-name">{card.cardName}</td>
                       <td className="item-details">{card.setName || ""}</td>
                       <td>{card.cardNumber || ""}</td>
-                      <td className="item-value">${Number(card.value || 0).toFixed(2)}</td>
+                      <td className="item-value">${Number(card.value || card.marketValue || 0).toFixed(2)}</td>
                       <td className="item-cond">{card.condition}</td>
                       <td>
                         <button
@@ -807,7 +1107,7 @@ export default function TradeTab() {
                       <td className="sealed-name">{prod.productName}</td>
                       <td className="sealed-details">{prod.productType || ""}</td>
                       <td>{prod.quantity || ""}</td>
-                      <td className="item-value">${Number(prod.value || 0).toFixed(2)}</td>
+                      <td className="item-value">${Number(prod.value || prod.marketValue || 0).toFixed(2)}</td>
                       <td className="item-cond">{prod.condition}</td>
                       <td>
                         <button
@@ -849,14 +1149,11 @@ export default function TradeTab() {
             </div>
           </div>
         </div>
-
         <div style={{ textAlign: "center", marginTop: 30 }}>
           <button className="trade-modal-btn" onClick={() => setConfirmOpen(true)}>
             Confirm & Log Trade
           </button>
         </div>
-
-        {/* Confirm Modal */}
         {confirmOpen && (
           <div className="trade-modal-bg">
             <div className="trade-modal">
@@ -873,182 +1170,20 @@ export default function TradeTab() {
             </div>
           </div>
         )}
-
-        {/* Vendor Manual Modal */}
-        {showVendorManual && (
-          <div className="trade-modal-bg">
-            <div className="trade-modal">
-              <div className="trade-modal-title">Add Card (Manual)</div>
-              <input
-                className="trade-modal-input"
-                type="text"
-                placeholder="Card Name"
-                value={manualVendor.name}
-                onChange={e => setManualVendor({ ...manualVendor, name: e.target.value })}
-              />
-              <input
-                className="trade-modal-input"
-                type="number"
-                placeholder="Market Value"
-                value={manualVendor.value}
-                onChange={e => setManualVendor({ ...manualVendor, value: e.target.value })}
-              />
-              <select
-                className="trade-modal-select"
-                value={manualVendor.condition}
-                onChange={e => setManualVendor({ ...manualVendor, condition: e.target.value })}
-              >
-                <option value="NM">Near Mint (NM)</option>
-                <option value="LP">Light Play (LP)</option>
-                <option value="MP">Moderate Play (MP)</option>
-                <option value="HP">Heavy Play (HP)</option>
-                <option value="DMG">Damaged</option>
-              </select>
-              <button className="trade-modal-btn" onClick={addManualVendorCard}>Add</button>
-              <button className="trade-modal-cancel-btn" onClick={() => setShowVendorManual(false)}>Cancel</button>
-            </div>
-          </div>
+        {showVendorManualAdd && (
+          <ManualAddModal
+            onClose={() => setShowVendorManualAdd(false)}
+            onSave={handleVendorManualAddSave}
+            side="vendor"
+          />
         )}
-
-        {/* Vendor Sealed Modal */}
-        {showVendorSealed && (
-          <div className="trade-modal-bg">
-            <div className="trade-modal">
-              <div className="trade-modal-title">Add Sealed Product</div>
-              <input
-                className="trade-modal-input"
-                type="text"
-                placeholder="Product Name"
-                value={manualVendorSealed.productName}
-                onChange={e => setManualVendorSealed({ ...manualVendorSealed, productName: e.target.value })}
-              />
-              <input
-                className="trade-modal-input"
-                type="text"
-                placeholder="Set Name"
-                value={manualVendorSealed.setName}
-                onChange={e => setManualVendorSealed({ ...manualVendorSealed, setName: e.target.value })}
-              />
-              <select
-                className="trade-modal-select"
-                value={manualVendorSealed.productType}
-                onChange={e => setManualVendorSealed({ ...manualVendorSealed, productType: e.target.value })}
-              >
-                <option>Booster Box</option>
-                <option>Booster Pack</option>
-                <option>ETB</option>
-                <option>Tin</option>
-                <option>Deck</option>
-                <option>Other</option>
-              </select>
-              <input
-                className="trade-modal-input"
-                type="number"
-                placeholder="Quantity"
-                value={manualVendorSealed.quantity}
-                onChange={e => setManualVendorSealed({ ...manualVendorSealed, quantity: e.target.value })}
-              />
-              <input
-                className="trade-modal-input"
-                type="number"
-                placeholder="Market Value"
-                value={manualVendorSealed.value}
-                onChange={e => setManualVendorSealed({ ...manualVendorSealed, value: e.target.value })}
-              />
-              <button className="trade-modal-btn" onClick={addManualVendorSealed}>Add</button>
-              <button className="trade-modal-cancel-btn" onClick={() => setShowVendorSealed(false)}>Cancel</button>
-            </div>
-          </div>
+        {showCustomerManualAdd && (
+          <ManualAddModal
+            onClose={() => setShowCustomerManualAdd(false)}
+            onSave={handleCustomerManualAddSave}
+            side="customer"
+          />
         )}
-
-        {/* Customer Manual Modal */}
-        {showCustomerManual && (
-          <div className="trade-modal-bg">
-            <div className="trade-modal">
-              <div className="trade-modal-title">Add Card (Manual)</div>
-              <input
-                className="trade-modal-input"
-                type="text"
-                placeholder="Card Name"
-                value={manualCustomer.name}
-                onChange={e => setManualCustomer({ ...manualCustomer, name: e.target.value })}
-              />
-              <input
-                className="trade-modal-input"
-                type="number"
-                placeholder="Market Value"
-                value={manualCustomer.value}
-                onChange={e => setManualCustomer({ ...manualCustomer, value: e.target.value })}
-              />
-              <select
-                className="trade-modal-select"
-                value={manualCustomer.condition}
-                onChange={e => setManualCustomer({ ...manualCustomer, condition: e.target.value })}
-              >
-                <option value="NM">Near Mint (NM)</option>
-                <option value="LP">Light Play (LP)</option>
-                <option value="MP">Moderate Play (MP)</option>
-                <option value="HP">Heavy Play (HP)</option>
-                <option value="DMG">Damaged</option>
-              </select>
-              <button className="trade-modal-btn" onClick={addManualCustomerCard}>Add</button>
-              <button className="trade-modal-cancel-btn" onClick={() => setShowCustomerManual(false)}>Cancel</button>
-            </div>
-          </div>
-        )}
-
-        {/* Customer Sealed Modal */}
-        {showCustomerSealed && (
-          <div className="trade-modal-bg">
-            <div className="trade-modal">
-              <div className="trade-modal-title">Add Sealed Product</div>
-              <input
-                className="trade-modal-input"
-                type="text"
-                placeholder="Product Name"
-                value={manualCustomerSealed.productName}
-                onChange={e => setManualCustomerSealed({ ...manualCustomerSealed, productName: e.target.value })}
-              />
-              <input
-                className="trade-modal-input"
-                type="text"
-                placeholder="Set Name"
-                value={manualCustomerSealed.setName}
-                onChange={e => setManualCustomerSealed({ ...manualCustomerSealed, setName: e.target.value })}
-              />
-              <select
-                className="trade-modal-select"
-                value={manualCustomerSealed.productType}
-                onChange={e => setManualCustomerSealed({ ...manualCustomerSealed, productType: e.target.value })}
-              >
-                <option>Booster Box</option>
-                <option>Booster Pack</option>
-                <option>ETB</option>
-                <option>Tin</option>
-                <option>Deck</option>
-                <option>Other</option>
-              </select>
-              <input
-                className="trade-modal-input"
-                type="number"
-                placeholder="Quantity"
-                value={manualCustomerSealed.quantity}
-                onChange={e => setManualCustomerSealed({ ...manualCustomerSealed, quantity: e.target.value })}
-              />
-              <input
-                className="trade-modal-input"
-                type="number"
-                placeholder="Market Value"
-                value={manualCustomerSealed.value}
-                onChange={e => setManualCustomerSealed({ ...manualCustomerSealed, value: e.target.value })}
-              />
-              <button className="trade-modal-btn" onClick={addManualCustomerSealed}>Add</button>
-              <button className="trade-modal-cancel-btn" onClick={() => setShowCustomerSealed(false)}>Cancel</button>
-            </div>
-          </div>
-        )}
-
-        {/* ----------- Customer Card Lookup Modal (CardLookup Style) ----------- */}
         {showCustomerLookup && (
           <div className="trade-lookup-modal-bg">
             <div className="trade-lookup-modal">
@@ -1083,13 +1218,19 @@ export default function TradeTab() {
                 />
               )}
               {lookupType === "numberSetTotal" && (
-                <>
+                <div style={{
+                  display: "flex",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  gap: "8px",
+                  marginBottom: 10
+                }}>
                   <input
                     className="trade-modal-input"
                     placeholder="Card Number (e.g., 4)"
                     value={lookupNumber}
                     onChange={e => setLookupNumber(e.target.value)}
-                    style={{ width: "92%", padding: 9, marginBottom: 10, marginLeft: "4%" }}
+                    style={{ width: "45%", padding: 9 }}
                     onKeyDown={e => e.key === "Enter" && doLookup(1)}
                   />
                   <input
@@ -1097,10 +1238,10 @@ export default function TradeTab() {
                     placeholder="Set Total (e.g., 102)"
                     value={lookupSetTotal}
                     onChange={e => setLookupSetTotal(e.target.value)}
-                    style={{ width: "92%", padding: 9, marginBottom: 10, marginLeft: "4%" }}
+                    style={{ width: "45%", padding: 9 }}
                     onKeyDown={e => e.key === "Enter" && doLookup(1)}
                   />
-                </>
+                </div>
               )}
               <button
                 className="trade-modal-btn"
