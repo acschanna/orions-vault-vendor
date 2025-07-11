@@ -6,7 +6,8 @@ import "./cardlookup.css";
 
 const accentGreen = "#00b84a";
 const cardDark = "#181b1e";
-const API_KEY = "d49129a9-8f4c-4130-968a-cd47501df765";
+const API_KEY = import.meta.env.VITE_POKEMON_TCG_API_KEY
+;
 
 const SETS_WITH_EDITION = [
   "base1","base2","jungle","fossil","teamrocket",

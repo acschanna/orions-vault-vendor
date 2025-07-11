@@ -43,7 +43,7 @@ const CONDITION_OPTIONS = [
   "Authentic",
   "Other"
 ];
-const PTCG_API_KEY = "d49129a9-8f4c-4130-968a-cd47501df765";
+const PTCG_API_KEY = import.meta.env.VITE_POKEMON_TCG_API_KEY;
 
 // ---- Card Details Modal ----
 function CardDetailsModal({ card, onClose }) {
@@ -490,6 +490,10 @@ export default function Inventory() {
   const [sortDir, setSortDir] = useState("desc");
   const [showManualAdd, setShowManualAdd] = useState(false);
 
+  // --- Market Value Updater State ---
+  const [updatingMarket, setUpdatingMarket] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState({ done: 0, total: 0, error: null });
+
   // Fetch inventory
   useEffect(() => {
     if (!uid) return;
@@ -682,6 +686,66 @@ export default function Inventory() {
     return sortDir === "asc" ? " ▲" : " ▼";
   }
 
+  // --- Bulk Market Value Update ---
+  async function handleUpdateMarketValues() {
+    if (!uid) return;
+    setUpdatingMarket(true);
+    setUpdateProgress({ done: 0, total: inventory.length, error: null });
+
+    let failedCount = 0;
+    for (let i = 0; i < inventory.length; ++i) {
+      const card = inventory[i];
+      try {
+        // Only try to update market value for items with a card name
+        if (!card.cardName) continue;
+        const params = [
+          `name:"${encodeURIComponent(card.cardName)}"`
+        ];
+        if (card.setName) params.push(`set.name:"${encodeURIComponent(card.setName)}"`);
+        if (card.cardNumber) params.push(`number:"${encodeURIComponent(card.cardNumber)}"`);
+
+        const url = `https://api.pokemontcg.io/v2/cards?q=${params.join(' ')}`;
+        const res = await fetch(url, {
+          headers: { "X-Api-Key": PTCG_API_KEY }
+        });
+        const json = await res.json();
+        let marketValue = 0;
+        if (json.data && json.data.length > 0) {
+          // Prefer TCGPlayer Market Price, fallback to lowest price if not present
+          const prices = json.data[0].tcgplayer?.prices || {};
+          const allPrices = Object.values(prices).filter(Boolean);
+          if (allPrices.length > 0) {
+            // Try market price, then mid, then low, then directLow
+            marketValue = allPrices.reduce((val, obj) => {
+              return (
+                obj.market ||
+                obj.mid ||
+                obj.low ||
+                obj.directLow ||
+                val ||
+                0
+              );
+            }, 0);
+          }
+        }
+        // If a market value was found and is a valid number, update Firestore and local state
+        if (marketValue && !isNaN(marketValue)) {
+          await updateDoc(doc(db, "users", uid, "inventory", card.id), { marketValue });
+          setInventory(prev =>
+            prev.map((c) => (c.id === card.id ? { ...c, marketValue } : c))
+          );
+        } else {
+          failedCount++;
+        }
+      } catch (err) {
+        failedCount++;
+      }
+      setUpdateProgress({ done: i + 1, total: inventory.length, error: null });
+    }
+    setUpdatingMarket(false);
+    setUpdateProgress({ done: inventory.length, total: inventory.length, error: failedCount > 0 ? `${failedCount} cards failed to update.` : null });
+  }
+
   return (
     <div className="inventory-root">
       <div className="inventory-header-row">
@@ -693,11 +757,28 @@ export default function Inventory() {
         {/* --- Manual Add Button --- */}
         <button
           className="inventory-action-btn"
-          style={{marginLeft:12, marginRight:12, background:"#287a32"}}
+          style={{marginLeft:12, marginRight:2, background:"#008afc"}}
           onClick={()=>setShowManualAdd(true)}
         >
           + Manual Add
         </button>
+
+        {/* --- Market Value Update Button --- */}
+        <button
+          className="inventory-action-btn"
+          style={{marginLeft:8, marginRight:2, background:"#f9d43f"}}
+          disabled={updatingMarket || inventory.length === 0}
+          onClick={handleUpdateMarketValues}
+        >
+          {updatingMarket
+            ? `Updating... (${updateProgress.done}/${updateProgress.total})`
+            : "Update Market Values"}
+        </button>
+        {updateProgress.error && (
+          <span style={{ color: "#d44", marginLeft: 8 }}>
+            {updateProgress.error}
+          </span>
+        )}
 
         <label className="inventory-action-btn">
           Import CSV
