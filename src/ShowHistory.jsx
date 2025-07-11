@@ -33,14 +33,11 @@ export default function ShowHistory() {
   async function loadShowStats(show) {
     setSelectedShow(show);
     setShowStats(null);
-    // Load all trades linked to this show
     const tradesQ = query(collection(db, "users", uid, "tradeHistory"));
     const tradesSnap = await getDocs(tradesQ);
-    // Filter for this show only
     const showTrades = tradesSnap.docs
       .map((d) => d.data())
       .filter((trade) => trade.showId === show.id);
-    // Aggregate stats
     let valueIn = 0, valueOut = 0, cashIn = 0, cashOut = 0;
     showTrades.forEach(trade => {
       valueIn += Number(trade.customer?.cards?.reduce((s, c) => s + Number(c.value || 0), 0) || 0)
@@ -50,10 +47,10 @@ export default function ShowHistory() {
       cashIn += Number(trade.customer?.cash || 0);
       cashOut += Number(trade.vendor?.cash || 0);
     });
-    // Get pending card sales at end (from user doc)
     let pendingSales = 0;
-    // Just get user document itself
     try {
+      // Only import getDoc and doc if not already imported
+      const { getDoc, doc } = await import("firebase/firestore");
       const userDocSnap = await getDoc(doc(db, "users", uid));
       if (userDocSnap.exists()) {
         pendingSales = Number(userDocSnap.data().pendingCardSales || 0);
@@ -65,7 +62,7 @@ export default function ShowHistory() {
   }
 
   return (
-    <div className="trade-history-root">
+    <div className="tab-content">
       <h2 className="trade-history-title">Show History</h2>
       {loading ? (
         <div style={{ color: "#00b84a", textAlign: "center", marginTop: 22 }}>Loading show history...</div>

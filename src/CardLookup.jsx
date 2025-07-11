@@ -1,4 +1,3 @@
-// src/CardLookup.jsx
 import React, { useState, useEffect } from "react";
 import { useUser } from "./App";
 import { db } from "./firebase";
@@ -6,9 +5,7 @@ import { collection, addDoc } from "firebase/firestore";
 import "./cardlookup.css";
 
 const accentGreen = "#00b84a";
-const bgBlack = "#111314";
 const cardDark = "#181b1e";
-const fontFamily = `'Inter', Arial, Helvetica, sans-serif`;
 const API_KEY = "d49129a9-8f4c-4130-968a-cd47501df765";
 
 const SETS_WITH_EDITION = [
@@ -31,13 +28,12 @@ export default function CardLookup() {
   const user = useUser();
   const uid = user?.uid;
 
-  const [sets, setSets] = useState([]);
-  const [setsLoading, setSetsLoading] = useState(false);
   const [searchType, setSearchType] = useState("name");
   const [searchName, setSearchName] = useState("");
-  const [searchSet, setSearchSet] = useState("");
   const [searchNumber, setSearchNumber] = useState("");
+  const [searchSetTotal, setSearchSetTotal] = useState("");
   const [lookupResults, setLookupResults] = useState([]);
+  const [allNumberResults, setAllNumberResults] = useState([]);
   const [selectedCard, setSelectedCard] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [showAddToInventory, setShowAddToInventory] = useState(false);
@@ -50,24 +46,9 @@ export default function CardLookup() {
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+  const PAGE_SIZE = 20;
 
-  useEffect(() => {
-    async function fetchSets() {
-      setSetsLoading(true);
-      try {
-        const res = await fetch("https://api.pokemontcg.io/v2/sets", {
-          headers: { "X-Api-Key": API_KEY },
-        });
-        const data = await res.json();
-        setSets(data.data.sort((a, b) => (b.releaseDate > a.releaseDate ? 1 : -1)));
-      } catch {
-        setSets([]);
-      }
-      setSetsLoading(false);
-    }
-    fetchSets();
-  }, []);
-
+  // Search function
   const lookupCard = async (curPage = 1) => {
     setLoading(true);
     setLookupResults([]);
@@ -76,70 +57,107 @@ export default function CardLookup() {
     setTotalCount(0);
 
     let url;
+
     if (searchType === "name") {
       url = `https://api.pokemontcg.io/v2/cards?q=name:"${encodeURIComponent(
         searchName
-      )}"&page=${curPage}&pageSize=20`;
-    } else {
-      if (!searchSet || !searchNumber) {
+      )}"&page=${curPage}&pageSize=${PAGE_SIZE}`;
+      try {
+        const response = await fetch(url, { headers: { "X-Api-Key": API_KEY } });
+        const data = await response.json();
+        setLookupResults(data.data || []);
+        setTotalCount(data.totalCount || 0);
+        setAllNumberResults([]);
+      } catch {
+        setLookupResults([]);
+        setTotalCount(0);
+        setAllNumberResults([]);
+      }
+      setLoading(false);
+
+    } else if (searchType === "number") {
+      if (!searchNumber) {
         setLoading(false);
         return;
       }
-      url = `https://api.pokemontcg.io/v2/cards?q=set.id:"${encodeURIComponent(
-        searchSet
-      )}"+number:"${encodeURIComponent(searchNumber)}"`;
-    }
-
-    try {
-      const response = await fetch(url, { headers: { "X-Api-Key": API_KEY } });
-      const data = await response.json();
-      if (searchType === "name") {
-        setLookupResults(data.data || []);
-        setTotalCount(data.totalCount || 0);
-      } else {
-        if (data.data?.length) {
-          setSelectedCard(data.data[0]);
-          setShowModal(true);
-          setAcquisitionCost("");
-          setCondition("NM");
-          setEdition("unlimited");
-          setTradeCondition("NM");
-          setTradeNotes("");
-        } else {
-          setSelectedCard({ notFound: true });
-          setShowModal(true);
-        }
+      url = `https://api.pokemontcg.io/v2/cards?q=number:"${encodeURIComponent(
+        searchNumber
+      )}"&page=1&pageSize=250`;
+      try {
+        const response = await fetch(url, { headers: { "X-Api-Key": API_KEY } });
+        const data = await response.json();
+        setAllNumberResults(data.data || []);
+        setLookupResults((data.data || []).slice(0, PAGE_SIZE));
+        setTotalCount((data.data || []).length);
+      } catch {
+        setLookupResults([]);
+        setTotalCount(0);
+        setAllNumberResults([]);
       }
-    } catch {
-      setSelectedCard({ error: true });
-      setShowModal(true);
-    }
+      setLoading(false);
 
-    setLoading(false);
+    } else if (searchType === "numberSetTotal") {
+      if (!searchNumber || !searchSetTotal) {
+        setLoading(false);
+        return;
+      }
+      url = `https://api.pokemontcg.io/v2/cards?q=number:"${encodeURIComponent(
+        searchNumber
+      )}"&page=1&pageSize=250`;
+      try {
+        const response = await fetch(url, { headers: { "X-Api-Key": API_KEY } });
+        const data = await response.json();
+        // Now filter locally for set.printedTotal
+        const filtered = (data.data || []).filter(card =>
+          card.set && String(card.set.printedTotal) === String(searchSetTotal)
+        );
+        setLookupResults(filtered.slice(0, PAGE_SIZE));
+        setTotalCount(filtered.length);
+        setAllNumberResults(filtered);
+      } catch {
+        setLookupResults([]);
+        setTotalCount(0);
+        setAllNumberResults([]);
+      }
+      setLoading(false);
+    }
   };
 
+  // Local paging for number or numberSetTotal search
+  useEffect(() => {
+    if (
+      (searchType === "number" && allNumberResults.length > 0) ||
+      (searchType === "numberSetTotal" && allNumberResults.length > 0)
+    ) {
+      setLookupResults(allNumberResults.slice((page-1)*PAGE_SIZE, page*PAGE_SIZE));
+      setTotalCount(allNumberResults.length);
+    }
+    // eslint-disable-next-line
+  }, [page, allNumberResults]);
+
   const nextPage = () => {
-    if (page * 20 < totalCount) {
-      const np = page + 1;
-      setPage(np);
-      lookupCard(np);
+    if (page * PAGE_SIZE < totalCount) {
+      setPage(page + 1);
+      if (searchType === "name") lookupCard(page + 1);
     }
   };
   const prevPage = () => {
     if (page > 1) {
-      const np = page - 1;
-      setPage(np);
-      lookupCard(np);
+      setPage(page - 1);
+      if (searchType === "name") lookupCard(page - 1);
     }
   };
 
+  // Reset search on input change
   useEffect(() => {
     setPage(1);
     setLookupResults([]);
     setSelectedCard(null);
     setShowModal(false);
     setTotalCount(0);
-  }, [searchType, searchName, searchSet, searchNumber]);
+    setAllNumberResults([]);
+    // eslint-disable-next-line
+  }, [searchType, searchName, searchNumber, searchSetTotal]);
 
   const handleAddToInventory = async () => {
     if (!uid) {
@@ -214,7 +232,6 @@ export default function CardLookup() {
     <div className="card-lookup-root">
       <h2 className="card-lookup-title">Card Lookup</h2>
 
-      {/* Controls */}
       <div className="card-lookup-controls">
         <select
           value={searchType}
@@ -222,60 +239,50 @@ export default function CardLookup() {
           className="card-lookup-select"
         >
           <option value="name">Search by Name</option>
-          <option value="number">Search by Set & Number</option>
+          <option value="number">Search by Number</option>
+          <option value="numberSetTotal">Search by Number + Set Total</option>
         </select>
-
-        {searchType === "name" ? (
+        {searchType === "name" && (
           <input
             className="card-lookup-input"
             placeholder="Card Name (e.g., Charizard)"
             value={searchName}
-            onChange={(e) => setSearchName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && lookupCard(1)}
+            onChange={e => setSearchName(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && lookupCard(1)}
             style={{ width: "60%" }}
           />
-        ) : setsLoading ? (
-          <span style={{ color: accentGreen }}>Loading sets...</span>
-        ) : (
+        )}
+        {searchType === "number" && (
+          <input
+            className="card-lookup-input"
+            placeholder="Card Number (e.g., 4)"
+            value={searchNumber}
+            onChange={e => setSearchNumber(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && lookupCard(1)}
+            style={{ width: "60%" }}
+          />
+        )}
+        {searchType === "numberSetTotal" && (
           <>
-            <select
-              className="card-lookup-select"
-              value={searchSet}
-              onChange={(e) => setSearchSet(e.target.value)}
-              style={{ width: "42%" }}
-            >
-              <option value="">Select Set</option>
-              {sets.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} [{s.id}]
-                </option>
-              ))}
-            </select>
-            {searchSet && (
-              <img
-                src={sets.find((s) => s.id === searchSet)?.images.symbol}
-                alt=""
-                style={{
-                  width: 26,
-                  verticalAlign: "middle",
-                  margin: "0 8px",
-                  background: cardDark,
-                  borderRadius: 5,
-                  border: "1px solid #222",
-                  padding: 2,
-                }}
-              />
-            )}
             <input
               className="card-lookup-input"
-              placeholder="Card Number (e.g., 4, 102/102)"
+              placeholder="Card Number (e.g., 4)"
               value={searchNumber}
-              onChange={(e) => setSearchNumber(e.target.value)}
-              style={{ width: "30%" }}
+              onChange={e => setSearchNumber(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && lookupCard(1)}
+              style={{ width: "42%" }}
+            />
+            <span style={{margin:"0 4px", fontWeight:600}}>/</span>
+            <input
+              className="card-lookup-input"
+              placeholder="Set Total (e.g., 102)"
+              value={searchSetTotal}
+              onChange={e => setSearchSetTotal(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && lookupCard(1)}
+              style={{ width: "42%" }}
             />
           </>
         )}
-
         <button
           className="card-lookup-button"
           onClick={() => {
@@ -289,8 +296,7 @@ export default function CardLookup() {
 
       {loading && <div style={{ color: accentGreen }}>Loading...</div>}
 
-      {/* Name search results grid */}
-      {searchType === "name" && lookupResults.length > 0 && (
+      {lookupResults.length > 0 && (
         <>
           <div className="card-lookup-results">
             {lookupResults.map((card) => (
@@ -302,7 +308,13 @@ export default function CardLookup() {
                 />
                 <div className="card-lookup-card-name">{card.name}</div>
                 <div className="card-lookup-card-set">{card.set.name}</div>
-                <div className="card-lookup-card-number">#{card.number}</div>
+                {/* Card number and set total */}
+                <div className="card-lookup-card-number" style={{fontWeight:600, fontSize:18, color:'#00b84a', letterSpacing:"1px"}}>
+                  #{card.number}
+                  {card.set && typeof card.set.printedTotal === "number" && card.set.printedTotal > 0
+                    ? `/${card.set.printedTotal}`
+                    : "/???"}
+                </div>
                 <button
                   className="card-lookup-card-viewbtn"
                   onClick={() => {
@@ -334,7 +346,7 @@ export default function CardLookup() {
             <button
               className="card-lookup-pagination-btn"
               onClick={nextPage}
-              disabled={page * 20 >= totalCount}
+              disabled={page * PAGE_SIZE >= totalCount}
             >
               Next
             </button>
@@ -342,8 +354,7 @@ export default function CardLookup() {
         </>
       )}
 
-      {/* Modal */}
-      {showModal && (
+      {showModal && selectedCard && (
         <div
           className="card-lookup-modal-bg"
           onClick={() => {
@@ -352,14 +363,13 @@ export default function CardLookup() {
             setShowAddToTrade(false);
           }}
         >
-          <div className="card-lookup-modal" onClick={(e) => e.stopPropagation()}>
-            {selectedCard?.error && (
+          <div className="card-lookup-modal" onClick={e => e.stopPropagation()}>
+            {selectedCard.error && (
               <div style={{ color: "crimson" }}>Error fetching data.</div>
             )}
-            {selectedCard?.notFound && <div>No card found.</div>}
-            {selectedCard?.name && (
+            {selectedCard.notFound && <div>No card found.</div>}
+            {selectedCard.name && (
               <>
-                {/* Card image */}
                 <div style={{ textAlign: "center" }}>
                   <img
                     src={selectedCard.images.large || selectedCard.images.small}
@@ -367,8 +377,6 @@ export default function CardLookup() {
                     className="card-lookup-modal-image"
                   />
                 </div>
-
-                {/* Centered TCGPlayer link button */}
                 <a
                   href={
                     selectedCard.tcgplayer?.url ||
@@ -386,11 +394,16 @@ export default function CardLookup() {
                     className="tcgplayer-icon"
                   />
                 </a>
-
-                {/* Card title & details */}
                 <div className="card-lookup-modal-title">{selectedCard.name}</div>
                 <div className="card-lookup-modal-set">
-                  {selectedCard.set.name} • #{selectedCard.number}
+                  {selectedCard.set.name}
+                  {" • "}
+                  <b>
+                    {selectedCard.number}
+                    {selectedCard.set && typeof selectedCard.set.printedTotal === "number" && selectedCard.set.printedTotal > 0
+                      ? `/${selectedCard.set.printedTotal}`
+                      : "/???"}
+                  </b>
                 </div>
                 <div className="card-lookup-modal-rarity">
                   <b style={{ color: "#fff" }}>Rarity:</b>{" "}
@@ -409,8 +422,7 @@ export default function CardLookup() {
                             0
                           : selectedCard.tcgplayer?.prices?.normal?.market ||
                             selectedCard.tcgplayer?.prices?.holofoil?.market ||
-                            selectedCard.tcgplayer?.prices?.reverseHolofoil
-                              ?.market ||
+                            selectedCard.tcgplayer?.prices?.reverseHolofoil?.market ||
                             0;
                       return p
                         ? p.toLocaleString("en-US", {
@@ -421,8 +433,6 @@ export default function CardLookup() {
                     })()}
                   </span>
                 </div>
-
-                {/* Add buttons */}
                 <div className="card-lookup-modal-btns">
                   <button
                     className="card-lookup-add-inv"
@@ -437,8 +447,6 @@ export default function CardLookup() {
                     Add to Trade
                   </button>
                 </div>
-
-                {/* Inline add-to-inventory */}
                 {showAddToInventory && (
                   <div className="card-lookup-modal-fields">
                     <label style={{ color: "#fff" }}>
@@ -493,8 +501,6 @@ export default function CardLookup() {
                     </button>
                   </div>
                 )}
-
-                {/* Inline add-to-trade */}
                 {showAddToTrade && (
                   <div className="card-lookup-modal-fields">
                     <label style={{ color: "#fff" }}>
@@ -547,8 +553,6 @@ export default function CardLookup() {
                     </button>
                   </div>
                 )}
-
-                {/* Close button */}
                 <div style={{ textAlign: "center", marginTop: 16 }}>
                   <button
                     className="card-lookup-cancel-btn"

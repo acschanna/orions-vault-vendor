@@ -207,7 +207,8 @@ function App() {
     trade: "/trade-bg.png",
     inventory: "/inventory-bg.png",
     lookup: "/lookup-bg.png",
-    history: "/history-bg.png"
+    history: "/history-bg.png",
+    shows: "/shows-bg.png"
   };
   const backgroundImageUrl = backgroundImages[tab] || backgroundImages.dashboard;
 
