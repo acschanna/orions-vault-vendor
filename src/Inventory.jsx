@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import { useUser } from "./App";
-import { db } from "./firebase";
+import { db, storage } from "./firebase";
 import {
   collection,
   getDocs,
@@ -11,9 +11,9 @@ import {
   query,
   orderBy,
 } from "firebase/firestore";
+import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import "./Inventory.css";
 
-// Dropdown options
 const CATEGORY_OPTIONS = [
   "All",
   "Cards",
@@ -49,6 +49,7 @@ const PTCG_API_KEY = "d49129a9-8f4c-4130-968a-cd47501df765";
 function CardDetailsModal({ card, onClose }) {
   const modalRef = useRef();
   const [cardImg, setCardImg] = useState(
+    card.manualImageUrl ||
     card.imageUrl ||
     card.image ||
     card.cardImage ||
@@ -238,11 +239,40 @@ function ManualAddModal({ onClose, onSave }) {
   const [marketValue, setMarketValue] = useState("");
   const [acquisitionCost, setAcquisitionCost] = useState("");
   const [quantity, setQuantity] = useState(1);
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [uploading, setUploading] = useState(false);
 
-  function handleSave() {
+  useEffect(() => {
+    if (!imageFile) {
+      setImagePreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(imageFile);
+    setImagePreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [imageFile]);
+
+  async function handleSave() {
     if (!cardName || !category) {
       alert("Please enter at least a name and category.");
       return;
+    }
+    let manualImageUrl = "";
+    setUploading(true);
+    if (imageFile) {
+      try {
+        const fileRef = storageRef(
+          storage,
+          `manual-inventory-images/${Date.now()}_${imageFile.name.replace(/[^a-zA-Z0-9.]/g, "_")}`
+        );
+        await uploadBytes(fileRef, imageFile);
+        manualImageUrl = await getDownloadURL(fileRef);
+      } catch {
+        alert("Failed to upload image. Try again.");
+        setUploading(false);
+        return;
+      }
     }
     onSave({
       cardName,
@@ -256,8 +286,10 @@ function ManualAddModal({ onClose, onSave }) {
       marketValue: Number(marketValue) || 0,
       acquisitionCost: Number(acquisitionCost) || 0,
       quantity: Number(quantity) || 1,
-      dateAdded: new Date().toISOString()
+      dateAdded: new Date().toISOString(),
+      manualImageUrl,
     });
+    setUploading(false);
     onClose();
   }
 
@@ -276,6 +308,30 @@ function ManualAddModal({ onClose, onSave }) {
           <button className="card-modal-close" onClick={onClose} aria-label="Close">&times;</button>
         </div>
         <div className="card-modal-body" style={{padding:20}}>
+          {/* Picture input and preview */}
+          <div style={{marginBottom:12}}>
+            <label>
+              Photo:{" "}
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={e=>{
+                  if (e.target.files && e.target.files[0]) setImageFile(e.target.files[0]);
+                }}
+                style={{marginLeft:10}}
+              />
+            </label>
+            {imagePreview && (
+              <div style={{marginTop:8}}>
+                <img
+                  src={imagePreview}
+                  alt="Preview"
+                  style={{maxWidth:140, maxHeight:120, borderRadius:10, border:"1px solid #888"}}
+                />
+              </div>
+            )}
+          </div>
           <label style={{display:"block", marginBottom:9}}>
             Name:
             <input
@@ -399,13 +455,15 @@ function ManualAddModal({ onClose, onSave }) {
             className="inventory-action-btn"
             style={{marginTop:10, width:120}}
             onClick={handleSave}
+            disabled={uploading}
           >
-            Save
+            {uploading ? "Saving..." : "Save"}
           </button>
           <button
             className="inventory-action-btn secondary"
             style={{marginTop:10, marginLeft:10, width:90}}
             onClick={onClose}
+            disabled={uploading}
           >
             Cancel
           </button>
@@ -423,7 +481,6 @@ export default function Inventory() {
   const [csvError, setCsvError] = useState("");
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [updatingPrices, setUpdatingPrices] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState(null);
@@ -455,7 +512,7 @@ export default function Inventory() {
     setInventory(prev => [...prev, { ...newItem, id: docRef.id }]);
   }
 
-  // CSV import (same as your code, replaces inventory)
+  // CSV import (replaces inventory)
   const handleImportCSV = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -492,6 +549,7 @@ export default function Inventory() {
           category: item.category || "Cards",
           gradingCompany: item.gradingCompany || "",
           grade: item.grade || "",
+          manualImageUrl: item.manualImageUrl || "",
           quantity: Number(item.quantity) || 1,
           dateAdded: item.dateAdded || new Date().toISOString(),
         });
@@ -511,7 +569,7 @@ export default function Inventory() {
     setImporting(false);
   };
 
-  // CSV export (same as your code, but adds new manual fields)
+  // CSV export (includes manual fields and photo)
   const handleExportCSV = () => {
     setExporting(true);
     const headers = [
@@ -525,6 +583,7 @@ export default function Inventory() {
       "category",
       "gradingCompany",
       "grade",
+      "manualImageUrl",
       "quantity",
       "dateAdded",
     ];
@@ -546,8 +605,6 @@ export default function Inventory() {
     document.body.removeChild(a);
     setExporting(false);
   };
-
-  // (Other handlers unchanged: updatingPrices, edit, saveEdit, delete, etc...)
 
   // Filtering & search
   const filtered = inventory
@@ -659,15 +716,6 @@ export default function Inventory() {
           disabled={exporting}
         >
           Export CSV
-        </button>
-
-        <button
-          className="inventory-action-btn"
-          onClick={() => {}}
-          disabled={updatingPrices}
-        >
-          {/* You can put Update Prices logic here if desired */}
-          Update Prices
         </button>
 
         <select

@@ -1,9 +1,10 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDKCeijHqzzl7bUnOFMgXcvJ9eiMF3YE14",
+  ,
   authDomain: "orions-vault-vendor.firebaseapp.com",
   projectId: "orions-vault-vendor",
   storageBucket: "orions-vault-vendor.appspot.com",
@@ -16,3 +17,4 @@ const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+export const storage = getStorage(app);
