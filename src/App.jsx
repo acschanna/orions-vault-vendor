@@ -42,7 +42,7 @@ const fontFamily = `'Inter', Arial, Helvetica, sans-serif`;
 const UserContext = createContext(null);
 export const useUser = () => useContext(UserContext);
 
-// --- DB helpers (unchanged) ---
+// --- DB helpers ---
 async function getInventory(uid) {
   const invRef = collection(db, "users", uid, "inventory");
   const q = query(invRef, orderBy("dateAdded", "asc"));
@@ -76,6 +76,70 @@ async function addDashboardLogSample(uid, value, cash) {
       await snap.docs[i].ref.delete();
     }
   }
+}
+
+// --- Category breakdown widget ---
+function CategoryMarketValueSummary({ inventory }) {
+  const CATEGORIES = [
+    "Cards",
+    "Graded Cards",
+    "Sealed Product",
+    "Supplies",
+    "Accessories"
+  ];
+
+  // Flexible matching for data that may use "type" or "category"
+  const perCategory = CATEGORIES.map(cat => {
+    const catLower = cat.toLowerCase();
+    const total = inventory
+      .filter(
+        item =>
+          (item.category || item.type || "")
+            .toLowerCase()
+            .replace(/s$/, "") === catLower.replace(/s$/, "")
+      )
+      .reduce((sum, c) => sum + (Number(c.marketValue) || 0), 0);
+    return { cat, total };
+  });
+
+  const grandTotal = perCategory.reduce((sum, row) => sum + row.total, 0);
+
+  return (
+    <div
+      className="dashboard-widget"
+      style={{
+        marginTop: 22,
+        background: "#181b1e",
+        borderRadius: 10,
+        padding: "18px 22px",
+        color: "#fff",
+        maxWidth: 440,
+        boxShadow: "0 2px 10px #0012"
+      }}
+    >
+      <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 7, color: "#00b84a" }}>
+        Inventory Value by Category
+      </div>
+      <table style={{ width: "100%", color: "#fff", fontSize: 15, marginBottom: 8 }}>
+        <tbody>
+          {perCategory.map(({ cat, total }) => (
+            <tr key={cat}>
+              <td style={{ padding: "2px 0" }}>{cat}:</td>
+              <td style={{ textAlign: "right", fontWeight: 600 }}>
+                ${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </td>
+            </tr>
+          ))}
+          <tr>
+            <td style={{ paddingTop: 10, fontWeight: 700, fontSize: 15 }}>Total:</td>
+            <td style={{ textAlign: "right", paddingTop: 10, fontWeight: 700, fontSize: 15, color: "#00b84a" }}>
+              ${grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 // --- LOGIN/REGISTER SCREEN ---
@@ -114,7 +178,6 @@ function LoginScreen() {
         setLoading(false);
       });
   }
-  // --- for fade ---
   const [bgFade, setBgFade] = useState("show-bg");
   useEffect(() => {
     setBgFade("fade-bg");
@@ -371,7 +434,6 @@ function App() {
     <UserContext.Provider value={firebaseUser}>
       <ShowProvider>
         <div className={`app-bg`}>
-          {/* 15% opacity background image layer */}
           <div
             className={bgFade}
             style={{
@@ -453,7 +515,7 @@ function App() {
                 {/* SHOW MODE BUTTON/MODAL */}
                 <div className="show-btn-row">
                   {!showActive ? (
-                <button className="trade-modal-btn green-btn show-btn-lg" onClick={() => setShowModeModalOpen(true)}>
+                    <button className="trade-modal-btn green-btn show-btn-lg" onClick={() => setShowModeModalOpen(true)}>
                       Start Show
                     </button>
                   ) : (
@@ -510,6 +572,9 @@ function App() {
                     </button>
                   </div>
                 </div>
+                {/* ---- Category Market Value Breakdown ---- */}
+                <CategoryMarketValueSummary inventory={inventory} />
+
                 <div className="funds-adjust-box">
                   <div className="funds-title">Adjust Funds</div>
                   <div className="funds-row">

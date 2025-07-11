@@ -13,7 +13,18 @@ import {
 } from "firebase/firestore";
 import "./Inventory.css";
 
-// Modal for card details (with image fetch fallback)
+const CATEGORY_OPTIONS = [
+  "All",
+  "Cards",
+  "Graded Cards",
+  "Sealed Product",
+  "Supplies",
+  "Accessories",
+];
+const EDITION_OPTIONS = ["1st Edition", "Unlimited", "Shadowless"];
+const PTCG_API_KEY = "d49129a9-8f4c-4130-968a-cd47501df765";
+
+// ---- Card Details Modal ----
 function CardDetailsModal({ card, onClose }) {
   const modalRef = useRef();
   const [cardImg, setCardImg] = useState(
@@ -33,7 +44,7 @@ function CardDetailsModal({ card, onClose }) {
       try {
         const url = `https://api.pokemontcg.io/v2/cards?q=name:"${encodeURIComponent(card.cardName)}"${card.setName ? ` set.name:"${encodeURIComponent(card.setName)}"` : ""}${card.cardNumber ? ` number:"${encodeURIComponent(card.cardNumber)}"` : ""}`;
         const res = await fetch(url, {
-          headers: { "X-Api-Key": "d49129a9-8f4c-4130-968a-cd47501df765" },
+          headers: { "X-Api-Key": PTCG_API_KEY },
         });
         const json = await res.json();
         let foundImg = null;
@@ -167,6 +178,12 @@ function CardDetailsModal({ card, onClose }) {
                   <td>{card.type}</td>
                 </tr>
               )}
+              {card.category && (
+                <tr>
+                  <td><b>Category</b></td>
+                  <td>{card.category}</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -175,9 +192,7 @@ function CardDetailsModal({ card, onClose }) {
   );
 }
 
-const EDITION_OPTIONS = ["1st Edition", "Unlimited", "Shadowless"];
-const PTCG_API_KEY = "d49129a9-8f4c-4130-968a-cd47501df765";
-
+// ---- Main Inventory Component ----
 export default function Inventory() {
   const user = useUser();
   const uid = user?.uid;
@@ -187,21 +202,15 @@ export default function Inventory() {
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [updatingPrices, setUpdatingPrices] = useState(false);
-  const [filter, setFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("All");
   const [search, setSearch] = useState("");
-
-  // Inline-edit state
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState({ marketValue: "", edition: "" });
-
-  // Modal state
   const [modalCard, setModalCard] = useState(null);
-
-  // Sorting state
   const [sortBy, setSortBy] = useState("dateAdded");
   const [sortDir, setSortDir] = useState("desc");
 
-  // Fetch inventory
+  // ---- Fetch inventory ----
   useEffect(() => {
     if (!uid) return;
     setLoading(true);
@@ -216,13 +225,15 @@ export default function Inventory() {
     })();
   }, [uid]);
 
-  // CSV import (includes edition)
+  // ---- CSV import (REPLACES inventory) ----
   const handleImportCSV = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     setImporting(true);
     setCsvError("");
+
     try {
+      // 1. Parse CSV and prepare items
       const text = await file.text();
       const rows = text.trim().split("\n");
       if (rows.length < 2) throw new Error("CSV missing data.");
@@ -233,6 +244,13 @@ export default function Inventory() {
         headers.forEach((h, i) => (itm[h.trim()] = cols[i]?.trim()));
         return itm;
       });
+
+      // 2. Delete ALL existing inventory
+      const currentDocs = await getDocs(collection(db, "users", uid, "inventory"));
+      const deletePromises = currentDocs.docs.map((d) => deleteDoc(doc(db, "users", uid, "inventory", d.id)));
+      await Promise.all(deletePromises);
+
+      // 3. Add all new items
       for (let item of items) {
         await addDoc(collection(db, "users", uid, "inventory"), {
           ...item,
@@ -242,10 +260,12 @@ export default function Inventory() {
           edition: EDITION_OPTIONS.includes(item.edition)
             ? item.edition
             : "",
+          category: item.category || "Cards",
           dateAdded: item.dateAdded || new Date().toISOString(),
         });
       }
-      // refresh
+
+      // 4. Refresh inventory
       const snap = await getDocs(
         query(
           collection(db, "users", uid, "inventory"),
@@ -259,7 +279,7 @@ export default function Inventory() {
     setImporting(false);
   };
 
-  // CSV export (includes edition)
+  // ---- CSV export ----
   const handleExportCSV = () => {
     setExporting(true);
     const headers = [
@@ -270,6 +290,7 @@ export default function Inventory() {
       "acquisitionCost",
       "condition",
       "edition",
+      "category",
       "dateAdded",
     ];
     const rows = [headers.join(",")];
@@ -291,7 +312,7 @@ export default function Inventory() {
     setExporting(false);
   };
 
-  // Update prices via Pokémon TCG API
+  // ---- Update Prices ----
   const handleUpdatePrices = async () => {
     if (!window.confirm("Fetch latest prices for all cards?")) return;
     setUpdatingPrices(true);
@@ -330,14 +351,14 @@ export default function Inventory() {
     setUpdatingPrices(false);
   };
 
-  // Delete card
+  // ---- Delete Card ----
   const handleDelete = async (id) => {
     if (!window.confirm("Remove this card from inventory?")) return;
     await deleteDoc(doc(db, "users", uid, "inventory", id));
     setInventory((prev) => prev.filter((c) => c.id !== id));
   };
 
-  // Start inline edit
+  // ---- Inline Editing ----
   const startEdit = (item) => {
     setEditingId(item.id);
     setDraft({
@@ -348,13 +369,11 @@ export default function Inventory() {
     });
   };
 
-  // Cancel inline edit
   const cancelEdit = () => {
     setEditingId(null);
     setDraft({ marketValue: "", edition: "" });
   };
 
-  // Save inline edit
   const saveEdit = async (id) => {
     const updated = {
       marketValue: Number(draft.marketValue) || 0,
@@ -370,13 +389,20 @@ export default function Inventory() {
     cancelEdit();
   };
 
-  // Filtering & search
+  // ---- Filtering and Search (Category-Aware) ----
   const filtered = inventory
-    .filter((item) =>
-      !filter ||
-      (filter === "cards" && item.type !== "sealed") ||
-      (filter === "sealed" && item.type === "sealed")
-    )
+    .filter((item) => {
+      if (categoryFilter === "All") return true;
+      const cat = (item.category || item.type || "cards").toLowerCase();
+      switch (categoryFilter) {
+        case "Cards": return cat === "cards" || cat === "card";
+        case "Graded Cards": return cat === "graded cards" || cat === "graded";
+        case "Sealed Product": return cat === "sealed product" || cat === "sealed";
+        case "Supplies": return cat === "supplies";
+        case "Accessories": return cat === "accessories";
+        default: return true;
+      }
+    })
     .filter((item) =>
       !search ||
       item.cardName?.toLowerCase().includes(search.toLowerCase()) ||
@@ -384,41 +410,33 @@ export default function Inventory() {
       item.cardNumber?.toLowerCase().includes(search.toLowerCase())
     );
 
-  // Sort function for table
+  // ---- Sorting ----
   const compare = (a, b, key) => {
     if (key === "marketValue" || key === "acquisitionCost") {
       return Number(a[key] || 0) - Number(b[key] || 0);
     }
     if (key === "dateAdded") {
-      // Parse dates as timestamps
       return new Date(a.dateAdded || 0).getTime() - new Date(b.dateAdded || 0).getTime();
     }
-    // Compare as strings (case-insensitive)
     return (a[key] || "").toString().localeCompare((b[key] || "").toString(), undefined, { sensitivity: "base" });
   };
-
   const sorted = [...filtered].sort((a, b) => {
     const result = compare(a, b, sortBy);
     return sortDir === "asc" ? result : -result;
   });
 
-  // Summary stats
+  // ---- Summary Stats ----
   const totalValue = inventory.reduce(
     (sum, c) => sum + (Number(c.marketValue) || 0),
     0
   );
-  const totalCards = inventory.filter((c) => c.type !== "sealed").length;
-  const totalSealed = inventory.filter((c) => c.type === "sealed").length;
+  const totalCards = inventory.filter((c) => (c.category || c.type || "cards").toLowerCase().includes("card")).length;
+  const totalSealed = inventory.filter((c) => (c.category || c.type || "").toLowerCase().includes("sealed")).length;
 
-  // Modal handlers
-  function handleNameClick(card) {
-    setModalCard(card);
-  }
-  function handleModalClose() {
-    setModalCard(null);
-  }
+  // ---- Modal Handlers ----
+  function handleNameClick(card) { setModalCard(card); }
+  function handleModalClose() { setModalCard(null); }
 
-  // Table headers and keys
   const COLUMNS = [
     { label: "Name", key: "cardName" },
     { label: "Set", key: "setName" },
@@ -427,13 +445,13 @@ export default function Inventory() {
     { label: "Acq. Cost", key: "acquisitionCost" },
     { label: "Condition", key: "condition" },
     { label: "Edition", key: "edition" },
+    { label: "Category", key: "category" },
     { label: "Date Added", key: "dateAdded" },
     { label: "Actions", key: "actions" }
   ];
 
-  // Handle sorting
   function handleSort(key) {
-    if (key === "actions") return; // Don't sort by actions column
+    if (key === "actions") return;
     if (sortBy === key) {
       setSortDir(d => (d === "asc" ? "desc" : "asc"));
     } else {
@@ -441,7 +459,6 @@ export default function Inventory() {
       setSortDir("asc");
     }
   }
-
   function sortArrow(key) {
     if (key !== sortBy) return null;
     return sortDir === "asc" ? " ▲" : " ▼";
@@ -484,12 +501,12 @@ export default function Inventory() {
 
         <select
           className="inventory-filter-select"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
+          value={categoryFilter}
+          onChange={e => setCategoryFilter(e.target.value)}
         >
-          <option value="">All</option>
-          <option value="cards">Cards Only</option>
-          <option value="sealed">Sealed Only</option>
+          {CATEGORY_OPTIONS.map((cat) => (
+            <option key={cat} value={cat}>{cat}</option>
+          ))}
         </select>
 
         <input
@@ -585,6 +602,9 @@ export default function Inventory() {
                   ) : (
                     item.edition || "—"
                   )}
+                </td>
+                <td>
+                  {item.category || (item.type === "sealed" ? "Sealed Product" : "Cards")}
                 </td>
                 <td>
                   {item.dateAdded

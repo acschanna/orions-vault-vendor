@@ -273,3 +273,26 @@
   margin-bottom: 12px;
   margin-top: 2px;
 }
+
+.inventory-container {
+  padding: 20px;
+}
+
+.inventory-filter-bar {
+  margin-bottom: 15px;
+}
+
+.inventory-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.inventory-item {
+  background: #222b22;
+  padding: 14px 18px;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px #1115;
+  min-width: 220px;
+  color: #fff;
+}
