@@ -25,6 +25,7 @@ export default function TradeHistory() {
   const [selectedTrade, setSelectedTrade] = useState(null);
   const [exporting, setExporting] = useState(false);
   const [reversing, setReversing] = useState(false);
+  const [undoing, setUndoing] = useState(false);
 
   useEffect(() => {
     if (!uid) return;
@@ -38,7 +39,7 @@ export default function TradeHistory() {
     fetchTrades();
   }, [uid]);
 
-  // --- CSV Export Function ---
+  // --- CSV Export Function (unchanged) ---
   function exportCSV() {
     setExporting(true);
     const headers = [
@@ -95,7 +96,7 @@ export default function TradeHistory() {
     setExporting(false);
   }
 
-  // --- Reverse Trade Logic ---
+  // --- Reverse Trade Logic (unchanged) ---
   async function handleReverseTrade(trade) {
     if (trade.reversed) return;
     if (!window.confirm("Are you sure you want to reverse this trade? This action cannot be undone!")) return;
@@ -192,6 +193,106 @@ export default function TradeHistory() {
     }
     setReversing(false);
   }
+
+  // --- Undo Reversal Logic (does all inventory/cash effects) ---
+  async function handleUndoReversal(trade) {
+    if (!trade.reversed) return;
+    if (!window.confirm("Undo the reversal for this trade? This will re-apply the original trade’s effects to inventory and cash.")) return;
+    setUndoing(true);
+
+    try {
+      // 1. Remove vendor cards/sealed BACK OUT of inventory (undo step 1 of reversal)
+      const invSnap = await getDocs(collection(db, "users", uid, "inventory"));
+      const inventory = invSnap.docs.map(d => ({ ...d.data(), docId: d.id }));
+
+      for (const card of trade.vendor?.cards || []) {
+        if (card.origin === "inventory" && card.id) {
+          const match = inventory.find(i =>
+            i.type === "card" &&
+            i.cardName === card.cardName &&
+            i.setName === card.setName &&
+            i.cardNumber === card.cardNumber &&
+            i.tcgPlayerId === card.tcgPlayerId &&
+            i.condition === card.condition &&
+            Math.abs(Number(i.marketValue) - Number(card.value)) < 0.01
+          );
+          if (match) {
+            await deleteDoc(doc(db, "users", uid, "inventory", match.docId));
+          }
+        }
+      }
+      for (const prod of trade.vendor?.sealed || []) {
+        if (prod.origin === "inventory" && prod.id) {
+          const match = inventory.find(i =>
+            i.type === "sealed" &&
+            i.productName === prod.productName &&
+            i.setName === prod.setName &&
+            i.productType === prod.productType &&
+            Number(i.quantity) === Number(prod.quantity) &&
+            Math.abs(Number(i.marketValue) - Number(prod.value)) < 0.01
+          );
+          if (match) {
+            await deleteDoc(doc(db, "users", uid, "inventory", match.docId));
+          }
+        }
+      }
+
+      // 2. Add customer cards/sealed BACK to inventory (undo step 2 of reversal)
+      for (const card of trade.customer?.cards || []) {
+        await addDoc(collection(db, "users", uid, "inventory"), {
+          type: "card",
+          setName: card.setName,
+          cardName: card.cardName,
+          cardNumber: card.cardNumber,
+          tcgPlayerId: card.tcgPlayerId,
+          ...(card.images ? { images: card.images } : {}),
+          marketValue: card.value,
+          acquisitionCost: card.acquisitionCost ?? card.value ?? 0,
+          condition: card.condition,
+          dateAdded: new Date().toISOString(),
+        });
+      }
+      for (const prod of trade.customer?.sealed || []) {
+        await addDoc(collection(db, "users", uid, "inventory"), {
+          type: "sealed",
+          productName: prod.productName,
+          setName: prod.setName,
+          productType: prod.productType,
+          quantity: prod.quantity,
+          ...(prod.images ? { images: prod.images } : {}),
+          marketValue: prod.value,
+          acquisitionCost: prod.acquisitionCost ?? prod.value ?? 0,
+          condition: prod.condition,
+          dateAdded: new Date().toISOString(),
+        });
+      }
+
+      // 3. Adjust cash on hand (undo step 3 of reversal)
+      const userSnap = await getDoc(doc(db, "users", uid));
+      const currentCash = Number(userSnap.data()?.cashOnHand || 0);
+      const newCash =
+        currentCash -
+        Number(trade.vendor?.cash || 0) +
+        Number(trade.customer?.cash || 0);
+      await setDoc(doc(db, "users", uid), { cashOnHand: newCash }, { merge: true });
+
+      // 4. Mark the trade as NOT reversed in tradeHistory
+      await setDoc(
+        doc(db, "users", uid, "tradeHistory", trade.id),
+        { reversed: false, reversedDate: null },
+        { merge: true }
+      );
+
+      setSelectedTrade({ ...trade, reversed: false, reversedDate: null });
+      setTrades(trades.map(t => (t.id === trade.id ? { ...t, reversed: false, reversedDate: null } : t)));
+      alert("Trade reversal has been undone, and all inventory/cash effects have been restored.");
+    } catch (err) {
+      alert("Error undoing reversal: " + err.message);
+    }
+    setUndoing(false);
+  }
+
+  // --- Remainder of your rendering (unchanged) ---
 
   return (
     <div className="trade-history-root">
@@ -390,7 +491,7 @@ export default function TradeHistory() {
               <button
                 className="trade-history-modal-btn"
                 onClick={() => setSelectedTrade(null)}
-                disabled={reversing}
+                disabled={reversing || undoing}
                 style={{ marginRight: 14 }}
               >
                 Close
@@ -409,6 +510,23 @@ export default function TradeHistory() {
               >
                 {reversing ? "Reversing..." : selectedTrade.reversed ? "Trade Reversed" : "Reverse Trade"}
               </button>
+              {/* Undo Reversal Button */}
+              {selectedTrade.reversed && (
+                <button
+                  className="trade-history-modal-btn"
+                  style={{
+                    background: "#fff",
+                    color: "#b84a00",
+                    border: "1px solid #b84a00",
+                    marginLeft: 10,
+                    opacity: undoing ? 0.6 : 1,
+                  }}
+                  disabled={undoing}
+                  onClick={() => handleUndoReversal(selectedTrade)}
+                >
+                  {undoing ? "Undoing..." : "Undo Reversal"}
+                </button>
+              )}
             </div>
           </div>
         </div>

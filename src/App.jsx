@@ -1,10 +1,11 @@
 import React, { useState, useEffect, createContext, useContext, useRef } from "react";
-import { auth, db } from "./firebase";
+import { auth, db, googleProvider } from "./firebase";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
+  signInWithPopup
 } from "firebase/auth";
 import {
   collection,
@@ -178,6 +179,21 @@ function LoginScreen() {
         setLoading(false);
       });
   }
+
+  // --- GOOGLE SIGN IN ---
+  async function handleGoogleSignIn(e) {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      await signInWithPopup(auth, googleProvider);
+      // No need to do anything else; onAuthStateChanged will handle the state.
+    } catch (err) {
+      setError("Google sign-in failed. " + (err.message || ""));
+    }
+    setLoading(false);
+  }
+
   const [bgFade, setBgFade] = useState("show-bg");
   useEffect(() => {
     setBgFade("fade-bg");
@@ -218,6 +234,27 @@ function LoginScreen() {
               {mode === "login" ? (loading ? "Logging in..." : "Login") : (loading ? "Creating..." : "Create Account")}
             </button>
           </form>
+          {/* --- GOOGLE SIGN IN BUTTON --- */}
+          <button
+            className="login-btn"
+            onClick={handleGoogleSignIn}
+            style={{
+              background: "#fff",
+              color: "#4285f4",
+              border: "1px solid #ccc",
+              marginTop: 8,
+              marginBottom: 8,
+              fontWeight: 700,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
+            }}
+            disabled={loading}
+          >
+            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
+              alt="Google" style={{ width: 22, height: 22, marginRight: 8 }} />
+            Sign in with Google
+          </button>
           <div className="login-toggle">
             {mode === "login" ? (
               <>
