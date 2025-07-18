@@ -426,6 +426,9 @@ export default function TradeTab() {
     customer: { cards: [], sealed: [], cash: 0, cashType: "cash" }
   });
 
+  // Customer Trade Value Percentage State
+  const [customerTradePercentage, setCustomerTradePercentage] = useState(70);
+
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmError, setConfirmError] = useState("");
 
@@ -800,9 +803,12 @@ export default function TradeTab() {
     const totalVendor = trade.vendor.cards.reduce((a, c) => a + Number(c.value || 0), 0)
       + trade.vendor.sealed.reduce((a, c) => a + Number(c.value || 0), 0)
       + Number(trade.vendor.cash || 0);
-    const totalCustomer = trade.customer.cards.reduce((a, c) => a + Number(c.value || 0), 0)
+
+    // Apply customer trade value percentage:
+    const rawCustomerTotal = trade.customer.cards.reduce((a, c) => a + Number(c.value || 0), 0)
       + trade.customer.sealed.reduce((a, c) => a + Number(c.value || 0), 0)
       + Number(trade.customer.cash || 0);
+    const totalCustomer = (rawCustomerTotal * (customerTradePercentage / 100));
 
     if (totalVendor === 0 && totalCustomer === 0) {
       setConfirmError("Cannot confirm empty trade.");
@@ -819,6 +825,7 @@ export default function TradeTab() {
       vendorEmail: user.email,
       valueVendor: totalVendor,
       valueCustomer: totalCustomer,
+      customerTradePercentage,
       showId: showActive?.id || null,
       showName: showActive?.showName || null,
     };
@@ -903,15 +910,60 @@ export default function TradeTab() {
     trade.vendor.cards.reduce((sum, c) => sum + Number(c.value || 0), 0) +
     trade.vendor.sealed.reduce((sum, c) => sum + Number(c.value || 0), 0) +
     Number(trade.vendor.cash || 0);
-  const customerTotal =
+
+  const rawCustomerTotal =
     trade.customer.cards.reduce((sum, c) => sum + Number(c.value || 0), 0) +
     trade.customer.sealed.reduce((sum, c) => sum + Number(c.value || 0), 0) +
     Number(trade.customer.cash || 0);
+
+  const customerTotal = (rawCustomerTotal * (customerTradePercentage / 100));
 
   return (
     <>
       <div className="trade-tab-root">
         <h2 className="trade-tab-title">Trade Builder</h2>
+        <div className="trade-value-percentage-row" style={{ margin: "0 0 18px 0", display: "flex", alignItems: "center", gap: "18px" }}>
+          <label style={{ fontWeight: 600 }}>
+            Customer Trade Value Percentage:&nbsp;
+            <input
+              type="range"
+              min="40"
+              max="100"
+              step="1"
+              value={customerTradePercentage}
+              onChange={e => setCustomerTradePercentage(Number(e.target.value))}
+              style={{ verticalAlign: "middle", width: 130 }}
+            />
+            <input
+              type="number"
+              min="40"
+              max="100"
+              value={customerTradePercentage}
+              onChange={e => {
+                let val = Number(e.target.value);
+                if (isNaN(val)) val = 70;
+                if (val < 40) val = 40;
+                if (val > 100) val = 100;
+                setCustomerTradePercentage(val);
+              }}
+              style={{
+                width: 52,
+                textAlign: "center",
+                fontWeight: 700,
+                fontSize: 16,
+                marginLeft: 8,
+                marginRight: 2,
+                borderRadius: 5,
+                border: "1px solid #aaa",
+                background: "#111",
+                color: "#fff"
+              }}
+            />%
+          </label>
+          <span style={{ color: "#aaa", fontSize: 14 }}>
+            (This controls the offer amount vs. customer's market value. Default is 70%)
+          </span>
+        </div>
         <div className="trade-row">
           <div className="trade-side vendor-side-box">
             <div className="trade-side-title">Your Side (Vendor)</div>
@@ -1123,7 +1175,10 @@ export default function TradeTab() {
               </table>
             </div>
             <div className="trade-side-total">
-              Total: ${customerTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              Raw Total: ${rawCustomerTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}<br />
+              <span style={{ color: "#85c9ff" }}>
+                Offer ({customerTradePercentage}%): <b>${customerTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
+              </span>
             </div>
             <div>
               <label className="trade-cash-label">
@@ -1161,7 +1216,8 @@ export default function TradeTab() {
               {confirmError && <div className="trade-modal-error">{confirmError}</div>}
               <div>
                 <b>Vendor Total:</b> ${vendorTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}<br />
-                <b>Customer Total:</b> ${customerTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <b>Customer Raw Total:</b> ${rawCustomerTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}<br />
+                <b>Customer Offer ({customerTradePercentage}%):</b> <span style={{ color: "#85c9ff" }}>${customerTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
               <div style={{ marginTop: 18 }}>
                 <button className="trade-modal-btn" onClick={confirmTrade}>Confirm</button>
