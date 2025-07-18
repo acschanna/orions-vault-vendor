@@ -39,13 +39,14 @@ export default function TradeHistory() {
     fetchTrades();
   }, [uid]);
 
-  // --- CSV Export Function (unchanged) ---
+  // --- CSV Export Function (updated to include trade percentage) ---
   function exportCSV() {
     setExporting(true);
     const headers = [
       "Date",
       "Vendor Value",
       "Customer Value",
+      "Customer Trade % Used",
       "Vendor Cards",
       "Vendor Sealed",
       "Customer Cards",
@@ -60,6 +61,7 @@ export default function TradeHistory() {
       trade.date ? new Date(trade.date).toLocaleString() : "",
       Number(trade.valueVendor || 0).toFixed(2),
       Number(trade.valueCustomer || 0).toFixed(2),
+      trade.customerTradePercentage !== undefined ? `${trade.customerTradePercentage}%` : "",
       trade.vendor?.cards?.map(c =>
         `${c.cardName} (${c.setName || ""} #${c.cardNumber || ""}, $${Number(c.value || 0).toFixed(2)}, ${c.condition})`
       ).join(" | "),
@@ -292,7 +294,7 @@ export default function TradeHistory() {
     setUndoing(false);
   }
 
-  // --- Remainder of your rendering (unchanged) ---
+  // --- Remainder of your rendering (unchanged except for percentage column) ---
 
   return (
     <div className="trade-history-root">
@@ -318,6 +320,7 @@ export default function TradeHistory() {
               <th>Date</th>
               <th>Vendor Value</th>
               <th>Customer Value</th>
+              <th>Trade %</th>
               <th>Details</th>
               <th>Reversed</th>
             </tr>
@@ -333,6 +336,9 @@ export default function TradeHistory() {
                 </td>
                 <td className="th-customer">
                   ${Number(trade.valueCustomer || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </td>
+                <td className="th-customer">
+                  {trade.customerTradePercentage !== undefined ? `${trade.customerTradePercentage}%` : ""}
                 </td>
                 <td>
                   <button className="th-btn" onClick={() => setSelectedTrade(trade)}>View</button>
@@ -359,6 +365,11 @@ export default function TradeHistory() {
             </div>
             <div style={{ color: "#b5dfff", marginBottom: 8, fontWeight: 700 }}>
               Customer Value: ${Number(selectedTrade.valueCustomer || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              {selectedTrade.customerTradePercentage !== undefined && (
+                <span style={{ marginLeft: 12, color: "#ffa500", fontWeight: 600 }}>
+                  (Trade %: {selectedTrade.customerTradePercentage}%)
+                </span>
+              )}
             </div>
             {selectedTrade.reversed && (
               <div style={{ color: "#f4453c", fontWeight: 700, marginBottom: 12 }}>
