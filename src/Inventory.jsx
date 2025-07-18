@@ -645,13 +645,17 @@ export default function Inventory() {
     return sortDir === "asc" ? result : -result;
   });
 
-  // Summary
+  // --- Summary totals that respect quantity ---
   const totalValue = inventory.reduce(
-    (sum, c) => sum + (Number(c.marketValue) || 0),
+    (sum, c) => sum + (Number(c.marketValue) || 0) * (Number(c.quantity) || 1),
     0
   );
-  const totalCards = inventory.filter((c) => (c.category || c.type || "cards").toLowerCase().includes("card")).length;
-  const totalSealed = inventory.filter((c) => (c.category || c.type || "").toLowerCase().includes("sealed")).length;
+  const totalCards = inventory
+    .filter((c) => (c.category || c.type || "cards").toLowerCase().includes("card"))
+    .reduce((sum, c) => sum + (Number(c.quantity) || 1), 0);
+  const totalSealed = inventory
+    .filter((c) => (c.category || c.type || "").toLowerCase().includes("sealed"))
+    .reduce((sum, c) => sum + (Number(c.quantity) || 1), 0);
 
   function handleNameClick(card) { setModalCard(card); }
   function handleModalClose() { setModalCard(null); }

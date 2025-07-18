@@ -79,7 +79,7 @@ async function addDashboardLogSample(uid, value, cash) {
   }
 }
 
-// --- Category breakdown widget ---
+// --- Category breakdown widget (UPDATED to multiply by quantity) ---
 function CategoryMarketValueSummary({ inventory }) {
   const CATEGORIES = [
     "Cards",
@@ -99,7 +99,10 @@ function CategoryMarketValueSummary({ inventory }) {
             .toLowerCase()
             .replace(/s$/, "") === catLower.replace(/s$/, "")
       )
-      .reduce((sum, c) => sum + (Number(c.marketValue) || 0), 0);
+      .reduce(
+        (sum, c) => sum + (Number(c.marketValue) || 0) * (Number(c.quantity) || 1),
+        0
+      );
     return { cat, total };
   });
 
@@ -363,7 +366,11 @@ function App() {
     return () => { cancelled = true; };
   }, [firebaseUser, tab]);
 
-  const inventoryValue = inventory.reduce((sum, c) => sum + (Number(c.marketValue) || 0), 0);
+  // --- Inventory Value (UPDATED to multiply by quantity) ---
+  const inventoryValue = inventory.reduce(
+    (sum, c) => sum + (Number(c.marketValue) || 0) * (Number(c.quantity) || 1),
+    0
+  );
 
   async function adjustFunds(type) {
     let amt = Number(fundsAdjust);

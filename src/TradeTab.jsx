@@ -9,6 +9,7 @@ import {
   setDoc,
   addDoc,
   deleteDoc,
+  updateDoc,
 } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { ShowContext } from "./ShowContext";
@@ -426,7 +427,8 @@ export default function TradeTab() {
     customer: { cards: [], sealed: [], cash: 0, cashType: "cash" }
   });
 
-  // Customer Trade Value Percentage State
+  const [vendorQuantities, setVendorQuantities] = useState({});
+
   const [customerTradePercentage, setCustomerTradePercentage] = useState(70);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -442,7 +444,6 @@ export default function TradeTab() {
 
   const [cashOnHand, setCashOnHand] = useState(0);
 
-  // ----------- CardLookup Style Customer Card Lookup -----------
   const [showCustomerLookup, setShowCustomerLookup] = useState(false);
   const [lookupType, setLookupType] = useState("name");
   const [lookupName, setLookupName] = useState("");
@@ -496,6 +497,7 @@ export default function TradeTab() {
   function addVendorFromInventory(id) {
     const item = inventory.find(c => c.id === id);
     if (!item) return;
+    setVendorQuantities(prev => ({ ...prev, [id]: 1 }));
     if (item.type === "sealed") {
       setTrade(prev => ({
         ...prev,
@@ -520,6 +522,11 @@ export default function TradeTab() {
         cards: prev.vendor.cards.filter(c => c.id !== id)
       }
     }));
+    setVendorQuantities(prev => {
+      const copy = { ...prev };
+      delete copy[id];
+      return copy;
+    });
   }
   function removeVendorSealed(id) {
     setTrade(prev => ({
@@ -529,6 +536,11 @@ export default function TradeTab() {
         sealed: prev.vendor.sealed.filter(c => c.id !== id)
       }
     }));
+    setVendorQuantities(prev => {
+      const copy = { ...prev };
+      delete copy[id];
+      return copy;
+    });
   }
   function setVendorCash(val) {
     if (isNaN(val)) return;
@@ -793,6 +805,7 @@ export default function TradeTab() {
       vendor: { cards: [], sealed: [], cash: 0, cashType: "cash" },
       customer: { cards: [], sealed: [], cash: 0, cashType: "cash" }
     });
+    setVendorQuantities({});
     setConfirmError("");
   }
 
@@ -800,14 +813,43 @@ export default function TradeTab() {
     if (!uid) return;
     setConfirmError("");
 
-    const totalVendor = trade.vendor.cards.reduce((a, c) => a + Number(c.value || 0), 0)
-      + trade.vendor.sealed.reduce((a, c) => a + Number(c.value || 0), 0)
+    for (let card of trade.vendor.cards) {
+      if (card.origin === "inventory" && card.id) {
+        const invItem = inventory.find(i => i.id === card.id);
+        const tradeQty = Number(vendorQuantities[card.id] || 1);
+        const invQty = Number(invItem?.quantity || 1);
+
+        if (tradeQty >= invQty) {
+          try { await deleteDoc(doc(db, "users", uid, "inventory", card.id)); } catch {}
+        } else {
+          await updateDoc(doc(db, "users", uid, "inventory", card.id), { quantity: invQty - tradeQty });
+        }
+      }
+    }
+    for (let prod of trade.vendor.sealed) {
+      if (prod.origin === "inventory" && prod.id) {
+        const invItem = inventory.find(i => i.id === prod.id);
+        const tradeQty = Number(vendorQuantities[prod.id] || 1);
+        const invQty = Number(invItem?.quantity || 1);
+
+        if (tradeQty >= invQty) {
+          try { await deleteDoc(doc(db, "users", uid, "inventory", prod.id)); } catch {}
+        } else {
+          await updateDoc(doc(db, "users", uid, "inventory", prod.id), { quantity: invQty - tradeQty });
+        }
+      }
+    }
+
+    const totalVendor = trade.vendor.cards.reduce((a, c) =>
+      a + (Number(c.value || 0) * Number(vendorQuantities[c.id] || 1)), 0)
+      + trade.vendor.sealed.reduce((a, c) =>
+        a + (Number(c.value || 0) * Number(vendorQuantities[c.id] || 1)), 0)
       + Number(trade.vendor.cash || 0);
 
-    // Apply customer trade value percentage:
     const rawCustomerTotal = trade.customer.cards.reduce((a, c) => a + Number(c.value || 0), 0)
       + trade.customer.sealed.reduce((a, c) => a + Number(c.value || 0), 0)
       + Number(trade.customer.cash || 0);
+
     const totalCustomer = (rawCustomerTotal * (customerTradePercentage / 100));
 
     if (totalVendor === 0 && totalCustomer === 0) {
@@ -821,6 +863,17 @@ export default function TradeTab() {
 
     const tradeRecord = {
       ...trade,
+      vendor: {
+        ...trade.vendor,
+        cards: trade.vendor.cards.map(c => ({
+          ...c,
+          quantity: Number(vendorQuantities[c.id] || 1)
+        })),
+        sealed: trade.vendor.sealed.map(c => ({
+          ...c,
+          quantity: Number(vendorQuantities[c.id] || 1)
+        })),
+      },
       date: new Date().toISOString(),
       vendorEmail: user.email,
       valueVendor: totalVendor,
@@ -832,21 +885,12 @@ export default function TradeTab() {
     const historyRef = collection(db, "users", uid, "tradeHistory");
     await setDoc(doc(historyRef), tradeRecord);
 
-    for (let c of trade.vendor.cards) {
-      if (c.origin === "inventory" && c.id) {
-        try { await deleteDoc(doc(db, "users", uid, "inventory", c.id)); } catch {}
-      }
-    }
-    for (let c of trade.vendor.sealed) {
-      if (c.origin === "inventory" && c.id) {
-        try { await deleteDoc(doc(db, "users", uid, "inventory", c.id)); } catch {}
-      }
-    }
-
     try {
       const totalVendorAcqCost =
-        trade.vendor.cards.reduce((a, c) => a + Number(c.acquisitionCost || c.value || 0), 0) +
-        trade.vendor.sealed.reduce((a, c) => a + Number(c.acquisitionCost || c.value || 0), 0) +
+        trade.vendor.cards.reduce((a, c) =>
+          a + (Number(c.acquisitionCost || c.value || 0) * Number(vendorQuantities[c.id] || 1)), 0) +
+        trade.vendor.sealed.reduce((a, c) =>
+          a + (Number(c.acquisitionCost || c.value || 0) * Number(vendorQuantities[c.id] || 1)), 0) +
         Number(trade.vendor.cash || 0) -
         Number(trade.customer.cash || 0);
 
@@ -907,8 +951,8 @@ export default function TradeTab() {
   }
 
   const vendorTotal =
-    trade.vendor.cards.reduce((sum, c) => sum + Number(c.value || 0), 0) +
-    trade.vendor.sealed.reduce((sum, c) => sum + Number(c.value || 0), 0) +
+    trade.vendor.cards.reduce((sum, c) => sum + Number(c.value || 0) * Number(vendorQuantities[c.id] || 1), 0) +
+    trade.vendor.sealed.reduce((sum, c) => sum + Number(c.value || 0) * Number(vendorQuantities[c.id] || 1), 0) +
     Number(trade.vendor.cash || 0);
 
   const rawCustomerTotal =
@@ -1038,6 +1082,7 @@ export default function TradeTab() {
                     <th>Name</th>
                     <th>Set/Product</th>
                     <th>#/Qty</th>
+                    <th>Trade Qty</th>
                     <th>Value</th>
                     <th>Cond.</th>
                     <th></th>
@@ -1049,7 +1094,25 @@ export default function TradeTab() {
                       <td className="item-name">{card.cardName}</td>
                       <td className="item-details">{card.setName || ""}</td>
                       <td>{card.cardNumber || ""}</td>
-                      <td className="item-value">${Number(card.value || card.marketValue || 0).toFixed(2)}</td>
+                      <td>
+                        <input
+                          type="number"
+                          min={1}
+                          max={inventory.find(i => i.id === card.id)?.quantity || 1}
+                          value={vendorQuantities[card.id] || 1}
+                          onChange={e => {
+                            const val = Math.max(1, Math.min(Number(e.target.value), inventory.find(i => i.id === card.id)?.quantity || 1));
+                            setVendorQuantities(prev => ({ ...prev, [card.id]: val }));
+                          }}
+                          style={{ width: 48, textAlign: "center" }}
+                        />
+                        <span style={{ color: "#bbb", marginLeft: 2, fontSize: 13 }}>
+                          /{inventory.find(i => i.id === card.id)?.quantity || 1}
+                        </span>
+                      </td>
+                      <td className="item-value">
+                        ${((Number(card.value || card.marketValue || 0)) * Number(vendorQuantities[card.id] || 1)).toFixed(2)}
+                      </td>
                       <td className="item-cond">{card.condition}</td>
                       <td>
                         <button
@@ -1066,7 +1129,25 @@ export default function TradeTab() {
                       <td className="sealed-name">{prod.productName}</td>
                       <td className="sealed-details">{prod.productType || ""}</td>
                       <td>{prod.quantity || ""}</td>
-                      <td className="item-value">${Number(prod.value || prod.marketValue || 0).toFixed(2)}</td>
+                      <td>
+                        <input
+                          type="number"
+                          min={1}
+                          max={inventory.find(i => i.id === prod.id)?.quantity || 1}
+                          value={vendorQuantities[prod.id] || 1}
+                          onChange={e => {
+                            const val = Math.max(1, Math.min(Number(e.target.value), inventory.find(i => i.id === prod.id)?.quantity || 1));
+                            setVendorQuantities(prev => ({ ...prev, [prod.id]: val }));
+                          }}
+                          style={{ width: 48, textAlign: "center" }}
+                        />
+                        <span style={{ color: "#bbb", marginLeft: 2, fontSize: 13 }}>
+                          /{inventory.find(i => i.id === prod.id)?.quantity || 1}
+                        </span>
+                      </td>
+                      <td className="item-value">
+                        ${((Number(prod.value || prod.marketValue || 0)) * Number(vendorQuantities[prod.id] || 1)).toFixed(2)}
+                      </td>
                       <td className="item-cond">{prod.condition}</td>
                       <td>
                         <button
